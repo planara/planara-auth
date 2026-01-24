@@ -1,14 +1,82 @@
+using System.Text;
+using HotChocolate.Types;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using Planara.Auth.Data;
+using Planara.Auth.GraphQL;
+using Planara.Auth.Options;
+using Planara.Auth.Services;
+using Planara.Common.Configuration;
+using Planara.Common.Database;
+using Planara.Common.GraphQL.Filters;
+using Planara.Common.Host;
+
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddOpenApi();
+builder.AddSettingsJson();
+builder.Services.AddAuthorization();
+
+builder.Services
+    .AddOptions<JwtOptions>()
+    .Bind(builder.Configuration.GetSection("Jwt"))
+    .ValidateDataAnnotations()
+    .Validate(o => o.SigningKey.Length >= 32, "SigningKey must be at least 32 chars")
+    .ValidateOnStart();
+
+builder.Services
+    .AddRouting()
+    .AddGraphQLServer()
+    .AddErrorFilter<ErrorFilter>()
+    .AddQueryType(m => m.Name(OperationTypeNames.Query))
+    .AddType<Query>()
+    .AddMutationType(m => m.Name(OperationTypeNames.Mutation))
+    .AddType<Mutation>()
+    .AddAuthorization() 
+    .InitializeOnStartup();
+
+builder.Services
+    // .AddCors()
+    .AddLogging();
+
+builder.Services.AddDataContext<DataContext>(
+    builder.Configuration.GetValue<string>("DbConnections:Postgres:ConnectionString")!,
+    builder.Configuration.GetValue<int>("DbConnections:Postgres:MaxRetry"),
+    builder.Configuration.GetValue<int>("DbConnections:Postgres:MaxDelaySec")
+);
+
+builder.Services
+    .AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<IOptions<JwtOptions>>((options, jwtOpt) =>
+    {
+        var jwt = jwtOpt.Value;
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwt.Issuer,
+
+            ValidateAudience = true,
+            ValidAudience = jwt.Audience,
+
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
+
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30)
+        };
+    });
+
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer();
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.UseHttpsRedirection();
+app.MapGraphQL();
 
-app.Run();
+app.PrepareAndRun<DataContext>(args);
