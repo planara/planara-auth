@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Planara.Auth", "src\Planara.Auth\Planara.Auth.csproj", "{0FEF1B72-3DAF-4E1B-A16F-90E7234E54F1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Planara.Auth", "src\Planara.Auth.csproj", "{0FEF1B72-3DAF-4E1B-A16F-90E7234E54F1}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
