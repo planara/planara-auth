@@ -7,10 +7,10 @@ EXPOSE 8081
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY ["src/Planara.Auth/Planara.Auth.csproj", "src/Planara.Auth/"]
-RUN dotnet restore "src/Planara.Auth/Planara.Auth.csproj"
+COPY ["src/Planara.Auth.csproj", "src/"]
+RUN dotnet restore "src/Planara.Auth.csproj"
 COPY . .
-WORKDIR "/src/src/Planara.Auth"
+WORKDIR "/src/src"
 RUN dotnet build "./Planara.Auth.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 FROM build AS publish
