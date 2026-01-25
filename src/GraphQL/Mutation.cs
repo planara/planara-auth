@@ -15,9 +15,17 @@ using ClaimTypes = Planara.Common.Auth.Claims.ClaimTypes;
 namespace Planara.Auth.GraphQL;
 
 [ExtendObjectType(OperationTypeNames.Mutation)]
-public class Mutation(ITokenService tokenService)
+public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
 {
+    private string? ClientIp =>
+        http.HttpContext?.Connection.RemoteIpAddress?.ToString();
+
+    private string? UserAgent =>
+        http.HttpContext?.Request.Headers.UserAgent.ToString();
+    
+    [GraphQLDescription("Регистрация пользователя и выдача пары access/refresh токенов.")]
     public async Task<AuthResponse> Register(
+        [GraphQLDescription("Данные для регистрации.")]
         [UseFluentValidation, UseValidator<RegisterRequestValidator>]
         RegisterRequest request,
         [Service] DataContext dataContext,
@@ -51,7 +59,9 @@ public class Mutation(ITokenService tokenService)
             UserId = userId,
             TokenHash = refreshHash,
             CreatedAtUtc = DateTime.UtcNow,
-            ExpiresAtUtc = refreshExp
+            ExpiresAtUtc = refreshExp,
+            CreatedByIp = ClientIp,
+            UserAgent = UserAgent
         });
 
         await dataContext.SaveChangesAsync(cancellationToken);
@@ -64,7 +74,9 @@ public class Mutation(ITokenService tokenService)
         };
     }
 
+    [GraphQLDescription("Вход в аккаунт и выдача новой пары access/refresh токенов.")]
     public async Task<AuthResponse> Login(
+        [GraphQLDescription("Данные для входа.")]
         [UseFluentValidation, UseValidator<LoginRequestValidator>]
         LoginRequest login,
         [Service] DataContext dataContext,
@@ -92,7 +104,9 @@ public class Mutation(ITokenService tokenService)
             UserId = cred.UserId,
             TokenHash = refreshHash,
             CreatedAtUtc = DateTime.UtcNow,
-            ExpiresAtUtc = refreshExp
+            ExpiresAtUtc = refreshExp,
+            CreatedByIp = ClientIp,
+            UserAgent = UserAgent
         });
 
         await dataContext.SaveChangesAsync(cancellationToken);
@@ -105,7 +119,9 @@ public class Mutation(ITokenService tokenService)
         };
     }
 
+    [GraphQLDescription("Обновление access токена по refresh токену.")]
     public async Task<AuthResponse> Refresh(
+        [GraphQLDescription("Refresh токен, выданный при входе/регистрации.")]
         [UseFluentValidation, UseValidator<RefreshRequestValidator>]
         RefreshRequest request,
         [Service] DataContext dataContext,
@@ -137,7 +153,9 @@ public class Mutation(ITokenService tokenService)
             UserId = stored.UserId,
             TokenHash = newHash,
             CreatedAtUtc = DateTime.UtcNow,
-            ExpiresAtUtc = newExp
+            ExpiresAtUtc = newExp,
+            CreatedByIp = ClientIp,
+            UserAgent = UserAgent
         });
 
         var (access, accessExp) = tokenService.GenerateAccessToken(BuildClaims(stored.UserId));
@@ -152,7 +170,9 @@ public class Mutation(ITokenService tokenService)
         };
     }
 
+    [GraphQLDescription("Выход из аккаунта: отзыв refresh токена.")]
     public async Task<LogoutResponse> Logout(
+        [GraphQLDescription("Refresh токен, который нужно отозвать.")]
         [UseFluentValidation, UseValidator<LogoutRequestValidator>]
         LogoutRequest request,
         [Service] DataContext dataContext,

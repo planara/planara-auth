@@ -18,8 +18,12 @@ using Planara.Common.Validators;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddSettingsJson();
-builder.Services.AddValidators(Assembly.GetExecutingAssembly());
-builder.Services.AddAuthorization();
+builder.Services
+    .AddValidators(Assembly.GetExecutingAssembly())
+    .AddHttpContextAccessor()
+    .AddAuthorization()
+    // .AddCors()
+    .AddLogging();
 
 builder.Services
     .AddOptions<JwtOptions>()
@@ -44,10 +48,6 @@ builder.Services
     })
     .ModifyRequestOptions(o => o.IncludeExceptionDetails = builder.Environment.IsDevelopment())
     .InitializeOnStartup();
-
-builder.Services
-    // .AddCors()
-    .AddLogging();
 
 builder.Services.AddDataContext<DataContext>(
     builder.Configuration.GetValue<string>("DbConnections:Postgres:ConnectionString")!,
@@ -86,7 +86,6 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapGraphQL();
 
 app.PrepareAndRun<DataContext>(args);
