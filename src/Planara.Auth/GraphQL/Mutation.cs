@@ -1,60 +1,54 @@
 using System.Security.Claims;
+using AppAny.HotChocolate.FluentValidation;
 using HotChocolate;
 using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 using Planara.Auth.Data;
 using Planara.Auth.Data.Domain;
+using Planara.Auth.Requests;
+using Planara.Auth.Responses;
 using Planara.Auth.Services;
+using Planara.Auth.Validators;
 using Planara.Common.Exceptions;
 using ClaimTypes = Planara.Common.Auth.Claims.ClaimTypes;
+using LoginRequest = Microsoft.AspNetCore.Identity.Data.LoginRequest;
+using RefreshRequest = Microsoft.AspNetCore.Identity.Data.RefreshRequest;
+using RegisterRequest = Microsoft.AspNetCore.Identity.Data.RegisterRequest;
 
 namespace Planara.Auth.GraphQL;
 
-public sealed record RegisterInput(string Email, string Password);
-public sealed record LoginInput(string Email, string Password);
-public sealed record RefreshInput(string RefreshToken);
-public sealed record LogoutInput(string RefreshToken);
-
-public sealed record AuthPayload(
-    string AccessToken,
-    DateTime AccessExpiresAtUtc,
-    string RefreshToken,
-    DateTime RefreshExpiresAtUtc
-);
-
-public sealed record LogoutPayload(bool Ok);
-
 [ExtendObjectType(OperationTypeNames.Mutation)]
-public class Mutation
+public class Mutation(ITokenService tokenService)
 {
-    public async Task<AuthPayload> Register(
-        RegisterInput input,
-        [Service] DataContext db,
-        [Service] ITokenService tokens,
-        CancellationToken ct)
+    public async Task<AuthResponse> Register(
+        [UseFluentValidation, UseValidator<RegisterRequestValidator>]
+        RegisterRequest request,
+        [Service] DataContext dataContext,
+        CancellationToken cancellationToken)
     {
-        var email = input.Email.Trim().ToLowerInvariant();
+        var email = request.Email.Trim().ToLowerInvariant();
 
-        var exists = await db.UserCredentials.AnyAsync(x => x.Email == email, ct);
+        var exists = await dataContext.UserCredentials
+            .AnyAsync(x => x.Email == email, cancellationToken);
+        
         if (exists)
             throw new GraphQLException("Email already registered");
 
         var userId = Guid.NewGuid();
-        var hash = BCrypt.Net.BCrypt.HashPassword(input.Password, workFactor: 12);
+        var hash = BCrypt.Net.BCrypt.HashPassword(request.Password, workFactor: 12);
 
-        db.UserCredentials.Add(new UserCredential
+        dataContext.UserCredentials.Add(new UserCredential
         {
             UserId = userId,
             Email = email,
             PasswordHash = hash
         });
 
-        var (access, accessExp) = tokens.GenerateAccessToken(BuildClaims(userId));
-
-        var (refreshRaw, refreshHash) = tokens.GenerateRefreshToken();
+        var (access, accessExp) = tokenService.GenerateAccessToken(BuildClaims(userId));
+        var (refreshRaw, refreshHash) = tokenService.GenerateRefreshToken();
         var refreshExp = DateTime.UtcNow.AddDays(30);
 
-        db.RefreshTokens.Add(new RefreshToken
+        dataContext.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.NewGuid(),
             UserId = userId,
@@ -63,32 +57,39 @@ public class Mutation
             ExpiresAtUtc = refreshExp
         });
 
-        await db.SaveChangesAsync(ct);
+        await dataContext.SaveChangesAsync(cancellationToken);
 
-        return new AuthPayload(access, accessExp, refreshRaw, refreshExp);
+        return new AuthResponse{
+            AccessToken = access, 
+            AccessExpiresAtUtc = accessExp, 
+            RefreshToken = refreshRaw, 
+            RefreshExpiresAtUtc = refreshExp
+        };
     }
 
-    public async Task<AuthPayload> Login(
-        LoginInput input,
-        [Service] DataContext db,
-        [Service] ITokenService tokens,
-        CancellationToken ct)
+    public async Task<AuthResponse> Login(
+        [UseFluentValidation, UseValidator<LoginRequestValidator>]
+        LoginRequest login,
+        [Service] DataContext dataContext,
+        CancellationToken cancellationToken)
     {
-        var email = input.Email.Trim().ToLowerInvariant();
+        var email = login.Email.Trim().ToLowerInvariant();
 
-        var cred = await db.UserCredentials.SingleOrDefaultAsync(x => x.Email == email, ct);
+        var cred = await dataContext.UserCredentials
+            .SingleOrDefaultAsync(x => x.Email == email, cancellationToken);
+        
         if (cred is null)
             throw new InvalidCredentialsException();
 
-        if (!BCrypt.Net.BCrypt.Verify(input.Password, cred.PasswordHash))
+        if (!BCrypt.Net.BCrypt.Verify(login.Password, cred.PasswordHash))
             throw new InvalidCredentialsException();
 
-        var (access, accessExp) = tokens.GenerateAccessToken(BuildClaims(cred.UserId));
+        var (access, accessExp) = tokenService.GenerateAccessToken(BuildClaims(cred.UserId));
 
-        var (refreshRaw, refreshHash) = tokens.GenerateRefreshToken();
+        var (refreshRaw, refreshHash) = tokenService.GenerateRefreshToken();
         var refreshExp = DateTime.UtcNow.AddDays(30);
 
-        db.RefreshTokens.Add(new RefreshToken
+        dataContext.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.NewGuid(),
             UserId = cred.UserId,
@@ -97,20 +98,27 @@ public class Mutation
             ExpiresAtUtc = refreshExp
         });
 
-        await db.SaveChangesAsync(ct);
+        await dataContext.SaveChangesAsync(cancellationToken);
 
-        return new AuthPayload(access, accessExp, refreshRaw, refreshExp);
+        return new AuthResponse{
+            AccessToken = access, 
+            AccessExpiresAtUtc = accessExp, 
+            RefreshToken = refreshRaw, 
+            RefreshExpiresAtUtc = refreshExp
+        };
     }
 
-    public async Task<AuthPayload> Refresh(
-        RefreshInput input,
-        [Service] DataContext db,
-        [Service] ITokenService tokens,
-        CancellationToken ct)
+    public async Task<AuthResponse> Refresh(
+        [UseFluentValidation, UseValidator<RefreshRequestValidator>]
+        RefreshRequest request,
+        [Service] DataContext dataContext,
+        CancellationToken cancellationToken)
     {
-        var oldHash = tokens.HashRefreshToken(input.RefreshToken);
+        var oldHash = tokenService.HashRefreshToken(request.RefreshToken);
 
-        var stored = await db.RefreshTokens.SingleOrDefaultAsync(x => x.TokenHash == oldHash, ct);
+        var stored = await dataContext.RefreshTokens
+            .SingleOrDefaultAsync(x => x.TokenHash == oldHash, cancellationToken);
+        
         if (stored is null)
             throw new GraphQLException("Invalid refresh token");
 
@@ -119,15 +127,14 @@ public class Mutation
 
         if (stored.ExpiresAtUtc <= DateTime.UtcNow)
             throw new GraphQLException("Refresh token expired");
-
-        // rotation
-        var (newRaw, newHash) = tokens.GenerateRefreshToken();
+        
+        var (newRaw, newHash) = tokenService.GenerateRefreshToken();
         var newExp = DateTime.UtcNow.AddDays(30);
 
         stored.RevokedAtUtc = DateTime.UtcNow;
         stored.ReplacedByTokenHash = newHash;
 
-        db.RefreshTokens.Add(new RefreshToken
+        dataContext.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.NewGuid(),
             UserId = stored.UserId,
@@ -136,29 +143,36 @@ public class Mutation
             ExpiresAtUtc = newExp
         });
 
-        var (access, accessExp) = tokens.GenerateAccessToken(BuildClaims(stored.UserId));
+        var (access, accessExp) = tokenService.GenerateAccessToken(BuildClaims(stored.UserId));
 
-        await db.SaveChangesAsync(ct);
-
-        return new AuthPayload(access, accessExp, newRaw, newExp);
+        await dataContext.SaveChangesAsync(cancellationToken);
+        
+        return new AuthResponse{
+            AccessToken = access, 
+            AccessExpiresAtUtc = accessExp, 
+            RefreshToken = newRaw, 
+            RefreshExpiresAtUtc = newExp
+        };
     }
 
-    public async Task<LogoutPayload> Logout(
-        LogoutInput input,
-        [Service] DataContext db,
-        [Service] ITokenService tokens,
-        CancellationToken ct)
+    public async Task<LogoutResponse> Logout(
+        [UseFluentValidation, UseValidator<LogoutRequestValidator>]
+        LogoutRequest request,
+        [Service] DataContext dataContext,
+        CancellationToken cancellationToken)
     {
-        var hash = tokens.HashRefreshToken(input.RefreshToken);
+        var hash = tokenService.HashRefreshToken(request.RefreshToken);
 
-        var stored = await db.RefreshTokens.SingleOrDefaultAsync(x => x.TokenHash == hash, ct);
+        var stored = await dataContext.RefreshTokens
+            .SingleOrDefaultAsync(x => x.TokenHash == hash, cancellationToken);
+        
         if (stored is not null && stored.RevokedAtUtc is null)
         {
             stored.RevokedAtUtc = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
+            await dataContext.SaveChangesAsync(cancellationToken);
         }
 
-        return new LogoutPayload(true);
+        return new LogoutResponse { Success =  true };
     }
 
     private static IReadOnlyList<Claim> BuildClaims(Guid userId) => new List<Claim>
