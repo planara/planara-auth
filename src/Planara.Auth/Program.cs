@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Text;
+using AppAny.HotChocolate.FluentValidation;
 using HotChocolate.Types;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
@@ -11,10 +13,12 @@ using Planara.Common.Configuration;
 using Planara.Common.Database;
 using Planara.Common.GraphQL.Filters;
 using Planara.Common.Host;
+using Planara.Common.Validators;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddSettingsJson();
+builder.Services.AddValidators(Assembly.GetExecutingAssembly());
 builder.Services.AddAuthorization();
 
 builder.Services
@@ -33,6 +37,12 @@ builder.Services
     .AddMutationType(m => m.Name(OperationTypeNames.Mutation))
     .AddType<Mutation>()
     .AddAuthorization() 
+    .AddFluentValidation(options =>
+    {
+        options.UseInputValidators();
+        options.UseDefaultErrorMapper();
+    })
+    .ModifyRequestOptions(o => o.IncludeExceptionDetails = builder.Environment.IsDevelopment())
     .InitializeOnStartup();
 
 builder.Services

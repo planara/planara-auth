@@ -11,9 +11,6 @@ using Planara.Auth.Services;
 using Planara.Auth.Validators;
 using Planara.Common.Exceptions;
 using ClaimTypes = Planara.Common.Auth.Claims.ClaimTypes;
-using LoginRequest = Microsoft.AspNetCore.Identity.Data.LoginRequest;
-using RefreshRequest = Microsoft.AspNetCore.Identity.Data.RefreshRequest;
-using RegisterRequest = Microsoft.AspNetCore.Identity.Data.RegisterRequest;
 
 namespace Planara.Auth.GraphQL;
 
