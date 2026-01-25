@@ -3,7 +3,10 @@ using Planara.Auth.Requests;
 
 namespace Planara.Auth.Validators;
 
-public sealed class LoginRequestValidator : AbstractValidator<LoginRequest>
+/// <summary>
+/// Валидатор запроса на вход в аккаунт
+/// </summary>
+public sealed class LoginRequestValidator: AbstractValidator<LoginRequest>
 {
     public LoginRequestValidator()
     {

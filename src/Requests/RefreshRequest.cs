@@ -1,12 +1,15 @@
+using HotChocolate;
+
 namespace Planara.Auth.Requests;
 
 /// <summary>
-/// Запрос на обновление access token
+/// Запрос на обновление access token с использованием refresh token
 /// </summary>
+[GraphQLDescription("Запрос на обновление access token")]
 public sealed class RefreshRequest
 {
     /// <summary>
-    /// Токен для обновления access token
+    /// Refresh token, используемый для получения нового access token
     /// </summary>
     public required string RefreshToken { get; set; }
 }

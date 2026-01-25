@@ -2,6 +2,7 @@ using System.Security.Claims;
 using AppAny.HotChocolate.FluentValidation;
 using HotChocolate;
 using HotChocolate.Types;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Planara.Auth.Data;
 using Planara.Auth.Data.Domain;
@@ -17,15 +18,21 @@ namespace Planara.Auth.GraphQL;
 [ExtendObjectType(OperationTypeNames.Mutation)]
 public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
 {
+    /// <summary>
+    /// IP-адрес клиента, с которого выполняется текущий запрос
+    /// </summary>
     private string? ClientIp =>
         http.HttpContext?.Connection.RemoteIpAddress?.ToString();
 
+    /// <summary>
+    /// User-Agent клиента, с которого выполняется текущий запрос
+    /// </summary>
     private string? UserAgent =>
         http.HttpContext?.Request.Headers.UserAgent.ToString();
     
-    [GraphQLDescription("Регистрация пользователя и выдача пары access/refresh токенов.")]
+    [GraphQLDescription("Регистрация пользователя и выдача пары access/refresh токенов")]
     public async Task<AuthResponse> Register(
-        [GraphQLDescription("Данные для регистрации.")]
+        [GraphQLDescription("Данные для регистрации")]
         [UseFluentValidation, UseValidator<RegisterRequestValidator>]
         RegisterRequest request,
         [Service] DataContext dataContext,
@@ -74,9 +81,9 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         };
     }
 
-    [GraphQLDescription("Вход в аккаунт и выдача новой пары access/refresh токенов.")]
+    [GraphQLDescription("Вход в аккаунт и выдача новой пары access/refresh токенов")]
     public async Task<AuthResponse> Login(
-        [GraphQLDescription("Данные для входа.")]
+        [GraphQLDescription("Данные для входа")]
         [UseFluentValidation, UseValidator<LoginRequestValidator>]
         LoginRequest login,
         [Service] DataContext dataContext,
@@ -119,9 +126,10 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         };
     }
 
-    [GraphQLDescription("Обновление access токена по refresh токену.")]
+    [Authorize]
+    [GraphQLDescription("Обновление access токена по refresh токену")]
     public async Task<AuthResponse> Refresh(
-        [GraphQLDescription("Refresh токен, выданный при входе/регистрации.")]
+        [GraphQLDescription("Refresh токен, выданный при входе/регистрации")]
         [UseFluentValidation, UseValidator<RefreshRequestValidator>]
         RefreshRequest request,
         [Service] DataContext dataContext,
@@ -170,9 +178,10 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         };
     }
 
-    [GraphQLDescription("Выход из аккаунта: отзыв refresh токена.")]
+    [Authorize]
+    [GraphQLDescription("Выход из аккаунта: отзыв refresh токена")]
     public async Task<LogoutResponse> Logout(
-        [GraphQLDescription("Refresh токен, который нужно отозвать.")]
+        [GraphQLDescription("Refresh токен, который нужно отозвать")]
         [UseFluentValidation, UseValidator<LogoutRequestValidator>]
         LogoutRequest request,
         [Service] DataContext dataContext,
@@ -189,9 +198,21 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             await dataContext.SaveChangesAsync(cancellationToken);
         }
 
-        return new LogoutResponse { Success =  true };
+        return new LogoutResponse { Success = true };
     }
 
+    /// <summary>
+    /// Формирует набор клеймов для JWT access token
+    /// </summary>
+    /// <param name="userId">Идентификатор пользователя, который будет помещён в клеймы токена</param>
+    /// <returns>
+    /// Набор клеймов, включающий:
+    /// <list type="bullet">
+    /// <item><description><c>userId</c> — идентификатор пользователя</description></item>
+    /// <item><description><c>jti</c> — уникальный идентификатор токена (JWT ID)</description></item>
+    /// <item><description><c>iat</c> — время выпуска токена в формате Unix time (секунды)</description></item>
+    /// </list>
+    /// </returns>
     private static IReadOnlyList<Claim> BuildClaims(Guid userId) => new List<Claim>
     {
         new(ClaimTypes.UserId, userId.ToString()),

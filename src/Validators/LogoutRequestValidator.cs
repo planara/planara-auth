@@ -3,7 +3,10 @@ using Planara.Auth.Requests;
 
 namespace Planara.Auth.Validators;
 
-public sealed class LogoutRequestValidator : AbstractValidator<LogoutRequest>
+/// <summary>
+/// Валидатор запроса на выход из аккаунта
+/// </summary>
+public sealed class LogoutRequestValidator: AbstractValidator<LogoutRequest>
 {
     public LogoutRequestValidator()
     {

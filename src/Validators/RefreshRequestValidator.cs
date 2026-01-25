@@ -3,7 +3,10 @@ using Planara.Auth.Requests;
 
 namespace Planara.Auth.Validators;
 
-public sealed class RefreshRequestValidator : AbstractValidator<RefreshRequest>
+/// <summary>
+/// Валидатор запроса на обновление access token
+/// </summary>
+public sealed class RefreshRequestValidator: AbstractValidator<RefreshRequest>
 {
     public RefreshRequestValidator()
     {
