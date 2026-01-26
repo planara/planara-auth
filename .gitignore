@@ -420,3 +420,5 @@ FodyWeavers.xsd
 
 #JetBarins IDE files
 .idea
+**/coverage
+**/TestResults
