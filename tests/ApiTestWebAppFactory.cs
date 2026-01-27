@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Planara.Auth.Data;
+using Planara.Common.Kafka;
+using Planara.Kafka.Interfaces;
 using Testcontainers.PostgreSql;
 
 namespace Planara.Auth.Tests;
@@ -25,6 +27,9 @@ public class ApiTestWebAppFactory: WebApplicationFactory<Program>, IAsyncLifetim
         {
             services.RemoveAll(typeof(DbContextOptions<DataContext>));
             services.RemoveAll(typeof(DataContext));
+            
+            services.RemoveAll(typeof(IKafkaProducer<UserCreatedMessage>));
+            services.AddSingleton<IKafkaProducer<UserCreatedMessage>, FakeKafkaProducer>();
 
             services.AddDbContextPool<DataContext>(opt =>
                 opt.UseNpgsql(_postgres.GetConnectionString()));

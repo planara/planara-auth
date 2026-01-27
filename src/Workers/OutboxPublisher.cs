@@ -37,7 +37,7 @@ public class OutboxPublisher(
         }
     }
     
-    private async Task PublishOnce(CancellationToken ct)
+    public async Task PublishOnce(CancellationToken ct)
     {
         var now = DateTime.UtcNow;
         var lockFor = TimeSpan.FromSeconds(30);

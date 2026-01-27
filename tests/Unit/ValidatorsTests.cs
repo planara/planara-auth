@@ -71,4 +71,52 @@ public class ValidatorsTests
 
         res.IsValid.Should().BeFalse();
     }
+
+    [Fact]
+    public void Register_PasswordMissingLower_Fails()
+    {
+        var validator = new RegisterRequestValidator();
+        var request = new RegisterRequest { Email = "a@b.com", Password = "QWERTY1!" }; // нет lower
+
+        var res = validator.Validate(request);
+
+        res.IsValid.Should().BeFalse();
+        res.Errors.Should().Contain(e => e.ErrorMessage.Contains("строчную", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Register_PasswordMissingUpper_Fails()
+    {
+        var validator = new RegisterRequestValidator();
+        var request = new RegisterRequest { Email = "a@b.com", Password = "qwerty1!" }; // нет upper
+
+        var res = validator.Validate(request);
+
+        res.IsValid.Should().BeFalse();
+        res.Errors.Should().Contain(e => e.ErrorMessage.Contains("заглавную", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Register_PasswordMissingDigit_Fails()
+    {
+        var validator = new RegisterRequestValidator();
+        var request = new RegisterRequest { Email = "a@b.com", Password = "Qwerty!!" };
+
+        var res = validator.Validate(request);
+
+        res.IsValid.Should().BeFalse();
+        res.Errors.Should().Contain(e => e.ErrorMessage.Contains("цифру", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Register_PasswordMissingSpecial_Fails()
+    {
+        var validator = new RegisterRequestValidator();
+        var request = new RegisterRequest { Email = "a@b.com", Password = "Qwerty12" };
+
+        var res = validator.Validate(request);
+
+        res.IsValid.Should().BeFalse();
+        res.Errors.Should().Contain(e => e.ErrorMessage.Contains("спецсимвол", StringComparison.OrdinalIgnoreCase));
+    }
 }
