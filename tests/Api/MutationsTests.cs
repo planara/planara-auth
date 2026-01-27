@@ -4,9 +4,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Planara.Auth.Data.Domain;
 using Planara.Auth.Services;
+using Planara.Common.Kafka;
 
 namespace Planara.Auth.Tests.Api;
 
+[Collection("AuthApi")]
 public class MutationsTests: BaseApiTest
 {
     public MutationsTests(ApiTestWebAppFactory factory) : base(factory) { }
@@ -411,5 +413,30 @@ public class MutationsTests: BaseApiTest
         var userId = (await Context.UserCredentials.SingleAsync(x => x.Email == email)).UserId;
 
         return (access, userId);
+    }
+    
+    [Fact]
+    public async Task Register_CreatesOutboxMessage()
+    {
+        await ResetAsync();
+
+        const string mutation = """
+                                mutation ($request: RegisterRequestInput!) {
+                                  register(request: $request) { accessToken }
+                                }
+                                """;
+
+        var doc = await Client.PostAsync(mutation, new
+        {
+            request = new { email = "out@box.com", password = "Qwerty1!" }
+        });
+
+        doc.GetErrors().Should().BeNull();
+
+        var msg = await Context.OutboxMessages.SingleAsync();
+        msg.TopicKey.Should().Be("Auth");
+        msg.Type.Should().Be(nameof(UserCreatedMessage));
+        msg.PayloadJson.Should().Contain("out@box.com");
+        msg.ProcessedAt.Should().BeNull();
     }
 }

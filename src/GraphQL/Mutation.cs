@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using AppAny.HotChocolate.FluentValidation;
 using HotChocolate;
 using HotChocolate.Types;
@@ -11,6 +12,8 @@ using Planara.Auth.Responses;
 using Planara.Auth.Services;
 using Planara.Auth.Validators;
 using Planara.Common.Exceptions;
+using Planara.Common.Kafka;
+using Planara.Kafka.Configurations;
 using ClaimTypes = Planara.Common.Auth.Claims.ClaimTypes;
 
 namespace Planara.Auth.GraphQL;
@@ -69,6 +72,20 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             ExpiresAtUtc = refreshExp,
             CreatedByIp = ClientIp,
             UserAgent = UserAgent
+        });
+        
+        var kafkaMessage = new UserCreatedMessage
+        {
+            UserId = userId,
+            Email = email
+        };
+        
+        dataContext.OutboxMessages.Add(new OutboxMessage
+        {
+            TopicKey = "Auth",
+            Type = nameof(UserCreatedMessage),
+            Key = userId.ToString("N"),
+            PayloadJson = JsonSerializer.Serialize(kafkaMessage, KafkaJson.SerializerOptions)
         });
 
         await dataContext.SaveChangesAsync(cancellationToken);

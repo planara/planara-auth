@@ -14,13 +14,20 @@
           <PrivateAssets>all</PrivateAssets>
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="Planara.Common" Version="1.3.6" />
+        <PackageReference Include="Planara.Common" Version="1.4.1" />
+        <PackageReference Include="Planara.Kafka" Version="1.1.0" />
     </ItemGroup>
 
     <ItemGroup>
       <Content Include="..\.dockerignore">
         <Link>.dockerignore</Link>
       </Content>
+    </ItemGroup>
+
+    <ItemGroup>
+      <_ContentIncludedByDefault Remove="Planara.Auth\obj\Planara.Auth.csproj.nuget.dgspec.json" />
+      <_ContentIncludedByDefault Remove="Planara.Auth\obj\project.assets.json" />
+      <_ContentIncludedByDefault Remove="Planara.Auth\obj\project.packagespec.json" />
     </ItemGroup>
 
 </Project>

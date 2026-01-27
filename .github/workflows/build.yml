@@ -38,7 +38,7 @@ jobs:
         run: |
           rm -rf tests/TestResults
           dotnet test Planara.Auth.sln \
-            --no-build -c Release \
+            -c Release \
             --collect:"XPlat Code Coverage" \
             --settings tests/coverlet.runsettings \
             --results-directory ./tests/TestResults \

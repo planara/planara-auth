@@ -2,9 +2,12 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Planara.Auth.Data;
+using Planara.Common.Kafka;
+using Planara.Kafka.Interfaces;
 using Testcontainers.PostgreSql;
 
 namespace Planara.Auth.Tests;
@@ -19,14 +22,20 @@ public class ApiTestWebAppFactory: WebApplicationFactory<Program>, IAsyncLifetim
     
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development");
+        builder.UseEnvironment("Test");
 
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll(typeof(DbContextOptions<DataContext>));
             services.RemoveAll(typeof(DataContext));
+            
+            services.RemoveAll(typeof(IKafkaProducer<UserCreatedMessage>));
 
-            services.AddDbContextPool<DataContext>(opt =>
+            services.AddScoped<FakeKafkaProducer>();
+            services.AddScoped<IKafkaProducer<UserCreatedMessage>>(sp =>
+                sp.GetRequiredService<FakeKafkaProducer>());
+
+            services.AddDbContext<DataContext>(opt =>
                 opt.UseNpgsql(_postgres.GetConnectionString()));
         });
     }

@@ -11,5 +11,7 @@ public class DbTestUtils
             .ExecuteSqlRawAsync(@"TRUNCATE TABLE ""RefreshTokens"" RESTART IDENTITY CASCADE;", cancellationToken);
         await db.Database
             .ExecuteSqlRawAsync(@"TRUNCATE TABLE ""UserCredentials"" RESTART IDENTITY CASCADE;", cancellationToken);
+        await db.Database
+            .ExecuteSqlRawAsync(@"TRUNCATE TABLE ""OutboxMessages"" RESTART IDENTITY CASCADE;", cancellationToken);
     }
 }
