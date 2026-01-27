@@ -9,11 +9,14 @@ using Planara.Auth.Data;
 using Planara.Auth.GraphQL;
 using Planara.Auth.Options;
 using Planara.Auth.Services;
+using Planara.Auth.Workers;
 using Planara.Common.Configuration;
 using Planara.Common.Database;
 using Planara.Common.GraphQL.Filters;
 using Planara.Common.Host;
+using Planara.Common.Kafka;
 using Planara.Common.Validators;
+using Planara.Kafka.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -56,6 +59,10 @@ builder.Services.AddDataContext<DataContext>(
 );
 
 builder.Services
+    .AddKafkaProducer<UserCreatedMessage>(builder.Configuration)
+    .AddKafkaTopicsInitializer(builder.Configuration);
+
+builder.Services
     .AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
     .Configure<IOptions<JwtOptions>>((options, jwtOpt) =>
     {
@@ -78,6 +85,7 @@ builder.Services
     });
 
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddHostedService<OutboxPublisher>();
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer();
