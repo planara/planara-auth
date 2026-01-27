@@ -19,7 +19,7 @@ using ClaimTypes = Planara.Common.Auth.Claims.ClaimTypes;
 namespace Planara.Auth.GraphQL;
 
 [ExtendObjectType(OperationTypeNames.Mutation)]
-public class Mutation(ITokenService tokenService, IHttpContextAccessor http, IConfiguration configuration)
+public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
 {
     /// <summary>
     /// IP-адрес клиента, с которого выполняется текущий запрос
