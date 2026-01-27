@@ -99,4 +99,22 @@ public class OutboxPublisherTests : BaseApiTest
 
         row.UpdatedAt.Should().BeOnOrAfter(before);
     }
+    
+    [Fact]
+    public async Task PublishOnce_WhenNoMessages_DoesNotProduce()
+    {
+        await DbTestUtils.ResetAuthDbAsync(Context);
+
+        using var scope = Factory.Services.CreateScope();
+        var publisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
+        var fake = scope.ServiceProvider.GetRequiredService<FakeKafkaProducer>();
+
+        var before = DateTime.UtcNow;
+        await publisher.PublishOnce(CancellationToken.None);
+        var after = DateTime.UtcNow;
+
+        fake.Sent.Should().BeEmpty();
+        
+        (after - before).Should().BeGreaterThan(TimeSpan.FromMilliseconds(200));
+    }
 }
