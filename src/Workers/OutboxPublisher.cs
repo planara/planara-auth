@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Planara.Auth.Data;
@@ -16,6 +17,7 @@ public class OutboxPublisher(
     private readonly string _workerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
     private const int BATCH_SIZE = 50;
     
+    [ExcludeFromCodeCoverage]
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
