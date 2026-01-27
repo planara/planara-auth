@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Planara.Auth.Tests.Api;
 
+[Collection("AuthApi")]
 public class QueryTests: BaseApiTest
 {
     public QueryTests(ApiTestWebAppFactory factory) : base(factory) { }

@@ -85,7 +85,11 @@ builder.Services
     });
 
 builder.Services.AddScoped<ITokenService, TokenService>();
-builder.Services.AddHostedService<OutboxPublisher>();
+
+builder.Services.AddScoped<OutboxPublisher>();
+if (!builder.Environment.IsEnvironment("Test"))
+    builder.Services.AddHostedService<OutboxPublisher>();
+
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer();

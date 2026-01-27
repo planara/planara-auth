@@ -8,6 +8,7 @@ using Planara.Common.Kafka;
 
 namespace Planara.Auth.Tests.Api;
 
+[Collection("AuthApi")]
 public class MutationsTests: BaseApiTest
 {
     public MutationsTests(ApiTestWebAppFactory factory) : base(factory) { }

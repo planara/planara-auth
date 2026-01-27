@@ -2,15 +2,15 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using Planara.Auth.Data;
 using Planara.Auth.Data.Domain;
 using Planara.Auth.Workers;
 using Planara.Common.Kafka;
 using Planara.Kafka.Configurations;
-using Planara.Kafka.Interfaces;
 
 namespace Planara.Auth.Tests.Api;
 
+[Collection("AuthApi")]
 public class OutboxPublisherTests : BaseApiTest
 {
     public OutboxPublisherTests(ApiTestWebAppFactory factory) : base(factory) { }
@@ -33,13 +33,9 @@ public class OutboxPublisherTests : BaseApiTest
         await Context.SaveChangesAsync();
 
         using var scope = Factory.Services.CreateScope();
-        var publisher = scope.ServiceProvider
-            .GetServices<IHostedService>()
-            .OfType<OutboxPublisher>()
-            .Single();
-
-        var fake = (FakeKafkaProducer)scope.ServiceProvider
-            .GetRequiredService<IKafkaProducer<UserCreatedMessage>>();
+        var publisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
+        var fake = scope.ServiceProvider.GetRequiredService<FakeKafkaProducer>();
+        fake.ThrowOnProduce = false;
 
         await publisher.PublishOnce(CancellationToken.None);
 
@@ -75,14 +71,8 @@ public class OutboxPublisherTests : BaseApiTest
         await Context.SaveChangesAsync();
 
         using var scope = Factory.Services.CreateScope();
-
-        var publisher = scope.ServiceProvider
-            .GetServices<IHostedService>()
-            .OfType<OutboxPublisher>()
-            .Single();
-
-        var fake = (FakeKafkaProducer)scope.ServiceProvider
-            .GetRequiredService<IKafkaProducer<UserCreatedMessage>>();
+        var publisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
+        var fake = scope.ServiceProvider.GetRequiredService<FakeKafkaProducer>();
 
         fake.ThrowOnProduce = true;
         fake.ExceptionToThrow = new InvalidOperationException("boom");
