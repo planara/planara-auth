@@ -1,4 +1,6 @@
 ![build](https://github.com/planara/planara-auth/actions/workflows/build.yml/badge.svg)
+![deploy](https://github.com/planara/planara-auth/actions/workflows/deploy.yml/badge.svg?branch=main)
+![version](https://img.shields.io/github/v/tag/planara/planara-auth?sort=semver)
 [![Codecov](https://codecov.io/gh/planara/planara-auth/branch/main/graph/badge.svg)](https://codecov.io/gh/planara/planara-auth)
 
 ## Planara.Auth
