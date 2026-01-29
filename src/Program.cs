@@ -96,6 +96,10 @@ builder.Services
 
 var app = builder.Build();
 
+// Инициализация топиков в Kafka
+if (!builder.Environment.IsEnvironment("Test"))
+    await app.UseKafka();
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapGraphQL();
