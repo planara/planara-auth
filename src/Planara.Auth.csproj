@@ -14,7 +14,7 @@
           <PrivateAssets>all</PrivateAssets>
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="Planara.Common" Version="1.4.2" />
+        <PackageReference Include="Planara.Common" Version="1.4.3" />
     </ItemGroup>
 
     <ItemGroup>
