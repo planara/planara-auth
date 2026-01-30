@@ -5,7 +5,7 @@ using System.Text;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using Planara.Auth.Options;
+using Planara.Common.Auth.Jwt;
 
 namespace Planara.Auth.Services;
 
