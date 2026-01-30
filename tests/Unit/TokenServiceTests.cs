@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
-using Planara.Auth.Options;
+using Planara.Common.Auth.Jwt;
 using Planara.Auth.Services;
 using ClaimTypes = Planara.Common.Auth.Claims.ClaimTypes;
 
