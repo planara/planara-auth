@@ -58,10 +58,6 @@ builder.Services.AddScoped<OutboxPublisher>();
 if (!builder.Environment.IsEnvironment("Test"))
     builder.Services.AddHostedService<OutboxPublisher>();
 
-builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer();
-
 var app = builder.Build();
 
 // Инициализация топиков в Kafka
