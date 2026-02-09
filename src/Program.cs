@@ -46,8 +46,13 @@ builder.Services
         _ =>
             ConnectionMultiplexer.Connect(
                 builder.Configuration.GetValue<string>("DbConnections:Redis:ConnectionString")!,
-                c => c.CertificateValidation += (_, _, _, _) => true
-            ),
+                c =>
+                {
+                    c.CertificateValidation += (_, _, _, _) => true;
+                    c.AbortOnConnectFail = !builder.Environment.IsEnvironment("Test");
+                    c.ConnectTimeout = 5000;
+                    c.ReconnectRetryPolicy = new ExponentialRetry(1000);
+                }),
         builder.Configuration.GetValue<string>("GraphQL:Name")!,
         WellKnownSchema.Auth
     )
