@@ -1,3 +1,5 @@
+using AppAny.HotChocolate.FluentValidation;
+using HotChocolate.Types;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -5,6 +7,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Planara.Auth.Data;
+using Planara.Auth.GraphQL;
+using Planara.Common.GraphQL.Filters;
 using Planara.Common.Kafka;
 using Planara.Kafka.Interfaces;
 using StackExchange.Redis;
@@ -21,10 +25,6 @@ public class ApiTestWebAppFactory: WebApplicationFactory<Program>, IAsyncLifetim
         .WithPassword("postgres")
         .Build();
     
-    private readonly RedisContainer _redis = new RedisBuilder("redis:latest")
-        .WithExposedPort(56379)
-        .Build();
-    
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Test");
@@ -33,8 +33,22 @@ public class ApiTestWebAppFactory: WebApplicationFactory<Program>, IAsyncLifetim
         {
             services.RemoveAll(typeof(DbContextOptions<DataContext>));
             services.RemoveAll(typeof(DataContext));
-            
             services.RemoveAll(typeof(IKafkaProducer<UserCreatedMessage>));
+
+            services
+                .AddGraphQLServer()
+                .AddErrorFilter<ErrorFilter>()
+                .AddQueryType(m => m.Name(OperationTypeNames.Query))
+                .AddType<Query>()
+                .AddMutationType(m => m.Name(OperationTypeNames.Mutation))
+                .AddType<Mutation>()
+                .AddAuthorization()
+                .AddFluentValidation(options =>
+                {
+                    options.UseInputValidators();
+                    options.UseDefaultErrorMapper();
+                })
+                .InitializeOnStartup();
 
             services.AddScoped<FakeKafkaProducer>();
             services.AddScoped<IKafkaProducer<UserCreatedMessage>>(sp =>
@@ -50,7 +64,6 @@ public class ApiTestWebAppFactory: WebApplicationFactory<Program>, IAsyncLifetim
     public async Task InitializeAsync()
     {
         await _postgres.StartAsync();
-        await _redis.StartAsync();
 
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<DataContext>();
@@ -59,9 +72,5 @@ public class ApiTestWebAppFactory: WebApplicationFactory<Program>, IAsyncLifetim
         await db.Database.MigrateAsync();
     }
 
-    public new async Task DisposeAsync()
-    {
-        await _postgres.StopAsync();
-        await _redis.StopAsync();
-    }
+    public new async Task DisposeAsync() => await _postgres.StopAsync();
 }
