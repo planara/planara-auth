@@ -11,9 +11,7 @@ using Planara.Auth.GraphQL;
 using Planara.Common.GraphQL.Filters;
 using Planara.Common.Kafka;
 using Planara.Kafka.Interfaces;
-using StackExchange.Redis;
 using Testcontainers.PostgreSql;
-using Testcontainers.Redis;
 
 namespace Planara.Auth.Tests;
 
@@ -56,8 +54,6 @@ public class ApiTestWebAppFactory: WebApplicationFactory<Program>, IAsyncLifetim
 
             services.AddDbContext<DataContext>(opt =>
                 opt.UseNpgsql(_postgres.GetConnectionString()));
-            
-            services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(_redis.GetConnectionString()));
         });
     }
 
