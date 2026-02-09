@@ -22,6 +22,7 @@ public class ApiTestWebAppFactory: WebApplicationFactory<Program>, IAsyncLifetim
         .Build();
     
     private readonly RedisContainer _redis = new RedisBuilder("redis:latest")
+        .WithExposedPort(56379)
         .Build();
     
     protected override void ConfigureWebHost(IWebHostBuilder builder)

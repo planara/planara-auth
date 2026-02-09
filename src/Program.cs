@@ -1,7 +1,6 @@
 using System.Reflection;
 using AppAny.HotChocolate.FluentValidation;
 using HotChocolate.Types;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Planara.Auth.Data;
 using Planara.Auth.GraphQL;
 using Planara.Auth.Services;
