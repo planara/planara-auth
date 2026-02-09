@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Planara.Auth.Data;
 using Planara.Common.Kafka;
 using Planara.Kafka.Interfaces;
+using StackExchange.Redis;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
 
@@ -40,6 +41,8 @@ public class ApiTestWebAppFactory: WebApplicationFactory<Program>, IAsyncLifetim
 
             services.AddDbContext<DataContext>(opt =>
                 opt.UseNpgsql(_postgres.GetConnectionString()));
+            
+            services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(_redis.GetConnectionString()));
         });
     }
 
