@@ -70,6 +70,16 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      
+  redis:
+    image: redis:latest
+    restart: always
+    ports:
+      - '56379:6379'
+    command: redis-server --save 20 1 --loglevel warning
+    volumes:
+      - redis-data:/data
 
 volumes:
   pgdata:
+  redis-data:
