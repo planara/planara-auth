@@ -33,6 +33,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
     private string? UserAgent =>
         http.HttpContext?.Request.Headers.UserAgent.ToString();
     
+    [AllowAnonymous]
     [GraphQLDescription("Регистрация пользователя и выдача пары access/refresh токенов")]
     public async Task<AuthResponse> Register(
         [GraphQLDescription("Данные для регистрации")]
@@ -98,6 +99,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         };
     }
 
+    [AllowAnonymous]
     [GraphQLDescription("Вход в аккаунт и выдача новой пары access/refresh токенов")]
     public async Task<AuthResponse> Login(
         [GraphQLDescription("Данные для входа")]
@@ -143,7 +145,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         };
     }
 
-    [Authorize]
+    [AllowAnonymous]
     [GraphQLDescription("Обновление access токена по refresh токену")]
     public async Task<AuthResponse> Refresh(
         [GraphQLDescription("Refresh токен, выданный при входе/регистрации")]
@@ -195,7 +197,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         };
     }
 
-    [Authorize]
+    [AllowAnonymous]
     [GraphQLDescription("Выход из аккаунта: отзыв refresh токена")]
     public async Task<LogoutResponse> Logout(
         [GraphQLDescription("Refresh токен, который нужно отозвать")]
