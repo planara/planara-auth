@@ -20,15 +20,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --force --tags
 
       - name: Set deploy variables
         id: vars
         run: |
           OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          SHA="$(git rev-parse HEAD)"
+          MAIN_SHA="$(git rev-parse HEAD)"
+          MAIN_SHORT_SHA="${MAIN_SHA::7}"
+
+          LATEST_TAG="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
+          LATEST_VERSION="${LATEST_TAG#v}"
 
           echo "image=ghcr.io/${OWNER_LC}/planara-auth" >> $GITHUB_OUTPUT
-          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "main_sha=$MAIN_SHA" >> $GITHUB_OUTPUT
+          echo "main_short_sha=$MAIN_SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -37,9 +48,36 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check image exists
+      - name: Resolve image tag
+        id: image
         run: |
-          docker buildx imagetools inspect ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha }}
+          IMAGE="${{ steps.vars.outputs.image }}"
+          MAIN_SHA="${{ steps.vars.outputs.main_sha }}"
+          LATEST_VERSION="${{ steps.vars.outputs.latest_version }}"
+
+          echo "Trying main image: ${IMAGE}:${MAIN_SHA}"
+
+          if docker buildx imagetools inspect "${IMAGE}:${MAIN_SHA}" > /dev/null 2>&1; then
+            echo "Resolved image tag: ${MAIN_SHA}"
+            echo "tag=${MAIN_SHA}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ -z "$LATEST_VERSION" ]; then
+            echo "No image for main sha and no v* tag found."
+            exit 1
+          fi
+
+          echo "Main image not found. Trying latest release image: ${IMAGE}:${LATEST_VERSION}"
+
+          if docker buildx imagetools inspect "${IMAGE}:${LATEST_VERSION}" > /dev/null 2>&1; then
+            echo "Resolved image tag: ${LATEST_VERSION}"
+            echo "tag=${LATEST_VERSION}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Neither ${IMAGE}:${MAIN_SHA} nor ${IMAGE}:${LATEST_VERSION} exists."
+          exit 1
 
       - name: Prepare SSH
         run: |
@@ -64,7 +102,7 @@ jobs:
       - name: Set image
         run: |
           ssh -i ~/.ssh/planara_vps ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "sudo k3s kubectl -n planara set image deployment/svc-auth svc-auth=${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha }}"
+            "sudo k3s kubectl -n planara set image deployment/svc-auth svc-auth=${{ steps.vars.outputs.image }}:${{ steps.image.outputs.tag }}"
 
       - name: Wait rollout
         run: |
