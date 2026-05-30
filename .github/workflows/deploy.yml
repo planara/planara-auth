@@ -6,12 +6,19 @@ on:
     types: [completed]
 
 jobs:
-  push-auth-api:
+  detect-release:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
-      packages: write
+
+    outputs:
+      should_deploy: ${{ steps.release.outputs.should_deploy }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.commit.outputs.sha }}
+      short_sha: ${{ steps.commit.outputs.short_sha }}
 
     steps:
       - uses: actions/checkout@v4
@@ -22,25 +29,52 @@ jobs:
       - name: Fetch tags
         run: git fetch --force --tags
 
-      - name: Get latest v* tag
-        id: ver
-        run: |
-          TAG="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
-
-      - name: Set image name
-        id: vars
-        run: |
-          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "image=ghcr.io/${OWNER_LC}/planara-auth" >> $GITHUB_OUTPUT
-
       - name: Set commit tags
         id: commit
         run: |
           SHA="${{ github.event.workflow_run.head_sha }}"
           echo "sha=$SHA" >> $GITHUB_OUTPUT
           echo "short_sha=${SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Detect release tag on current commit
+        id: release
+        run: |
+          TAG="$(git tag --points-at HEAD --list 'v*' --sort=-v:refname | head -n 1)"
+
+          if [ -z "$TAG" ]; then
+            echo "No v* tag found on this commit. Skip docker image deploy."
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "tag=" >> $GITHUB_OUTPUT
+            echo "version=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Release tag found: $TAG"
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+
+  push-auth-api:
+    needs: detect-release
+    if: ${{ needs.detect-release.outputs.should_deploy == 'true' }}
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.detect-release.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Set image name
+        id: vars
+        run: |
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/${OWNER_LC}/planara-auth" >> $GITHUB_OUTPUT
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -64,6 +98,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: |
             ${{ steps.vars.outputs.image }}:latest
-            ${{ steps.vars.outputs.image }}:${{ steps.ver.outputs.version }}
-            ${{ steps.vars.outputs.image }}:${{ steps.commit.outputs.sha }}
-            ${{ steps.vars.outputs.image }}:sha-${{ steps.commit.outputs.short_sha }}
+            ${{ steps.vars.outputs.image }}:${{ needs.detect-release.outputs.version }}
+            ${{ steps.vars.outputs.image }}:${{ needs.detect-release.outputs.sha }}
+            ${{ steps.vars.outputs.image }}:sha-${{ needs.detect-release.outputs.short_sha }}
