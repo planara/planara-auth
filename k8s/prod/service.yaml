@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: planara-auth
+  namespace: planara
+spec:
+  type: ClusterIP
+  selector:
+    app: planara-auth
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+
+    - name: management
+      port: 8081
+      targetPort: 8081

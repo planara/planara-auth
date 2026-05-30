@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: planara-auth
+  namespace: planara
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: planara-auth
+  template:
+    metadata:
+      labels:
+        app: planara-auth
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+
+      containers:
+        - name: planara-auth
+          image: ghcr.io/planara/planara-auth:latest
+          args:
+            - --migrate
+
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 8081
+
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: "Production"
+
+            - name: PGDATABASE
+              value: "auth"
+
+            - name: DbConnections__Postgres__ConnectionString
+              valueFrom:
+                secretKeyRef:
+                  name: planara-common-secrets
+                  key: DbConnections__Postgres__ConnectionString
+
+            - name: DbConnections__Redis__ConnectionString
+              valueFrom:
+                secretKeyRef:
+                  name: planara-common-secrets
+                  key: DbConnections__Redis__ConnectionString
+
+            - name: Kafka__BootstrapServers
+              valueFrom:
+                secretKeyRef:
+                  name: planara-common-secrets
+                  key: Kafka__BootstrapServers
+
+            - name: Jwt__Issuer
+              value: "planara-auth"
+
+            - name: Jwt__Audience
+              value: "planara"
+
+            - name: Jwt__SigningKey
+              valueFrom:
+                secretKeyRef:
+                  name: planara-common-secrets
+                  key: Jwt__SigningKey
+
+            - name: Jwt__AccessTokenMinutes
+              value: "15"
+
+            - name: Kafka__ProducerTopics__Auth
+              value: "auth"
+
+            - name: GraphQL__Name
+              value: "GraphQLSchema"
+
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 12
+
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 6
