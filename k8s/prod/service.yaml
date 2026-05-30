@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: planara-auth
+  name: svc-auth
   namespace: planara
 spec:
   type: ClusterIP
   selector:
-    app: planara-auth
+    app: svc-auth
   ports:
     - name: http
       port: 8080

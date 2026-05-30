@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: planara-auth
+  name: svc-auth
   namespace: planara
 spec:
   replicas: 1
@@ -9,17 +9,17 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: planara-auth
+      app: svc-auth
   template:
     metadata:
       labels:
-        app: planara-auth
+        app: svc-auth
     spec:
       imagePullSecrets:
         - name: ghcr-secret
 
       containers:
-        - name: planara-auth
+        - name: svc-auth
           image: ghcr.io/planara/planara-auth:latest
           args:
             - --migrate

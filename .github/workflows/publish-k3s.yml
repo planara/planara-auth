@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: planara-auth-prod
+  group: svc-auth-prod
   cancel-in-progress: false
 
 jobs:
@@ -51,27 +51,27 @@ jobs:
       - name: Upload manifests
         run: |
           ssh -i ~/.ssh/planara_vps ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "mkdir -p ~/planara-deploy/planara-auth/k8s/prod"
+            "mkdir -p ~/planara-deploy/svc-auth/k8s/prod"
 
           scp -i ~/.ssh/planara_vps -r k8s/prod/* \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/planara-deploy/planara-auth/k8s/prod/
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/planara-deploy/svc-auth/k8s/prod/
 
       - name: Apply manifests
         run: |
           ssh -i ~/.ssh/planara_vps ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "sudo k3s kubectl apply -f ~/planara-deploy/planara-auth/k8s/prod"
+            "sudo k3s kubectl apply -f ~/planara-deploy/svc-auth/k8s/prod"
 
       - name: Set image
         run: |
           ssh -i ~/.ssh/planara_vps ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "sudo k3s kubectl -n planara set image deployment/planara-auth planara-auth=${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha }}"
+            "sudo k3s kubectl -n planara set image deployment/svc-auth svc-auth=${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.sha }}"
 
       - name: Wait rollout
         run: |
           ssh -i ~/.ssh/planara_vps ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "sudo k3s kubectl -n planara rollout status deployment/planara-auth --timeout=180s"
+            "sudo k3s kubectl -n planara rollout status deployment/svc-auth --timeout=180s"
 
       - name: Show status
         run: |
           ssh -i ~/.ssh/planara_vps ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "sudo k3s kubectl -n planara get pods && sudo k3s kubectl -n planara get svc planara-auth"
+            "sudo k3s kubectl -n planara get pods && sudo k3s kubectl -n planara get svc svc-auth"
