@@ -1,8 +1,10 @@
 ![build](https://github.com/planara/planara-auth/actions/workflows/build.yml/badge.svg)
-![release](https://github.com/planara/planara-auth/actions/workflows/release.yml/badge.svg?branch=main)
+![release](https://github.com/planara/planara-auth/actions/workflows/release.yml/badge.svg)
 ![publish-k3s](https://github.com/planara/planara-auth/actions/workflows/publish-k3s.yml/badge.svg?branch=main)
 ![version](https://img.shields.io/github/v/tag/planara/planara-auth?sort=semver)
 [![Codecov](https://codecov.io/gh/planara/planara-auth/branch/main/graph/badge.svg)](https://codecov.io/gh/planara/planara-auth)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
 ## Planara.Auth
 
