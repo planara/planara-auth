@@ -70,8 +70,11 @@ spec:
             - name: Jwt__AccessTokenMinutes
               value: "15"
 
-            - name: Kafka__ProducerTopics__Auth
-              value: "auth"
+            - name: Kafka__ProducerTopics__UserCreated
+              value: "UserCreated"
+              
+            - name: Kafka__ProducerTopics__UserDeleted
+              value: "UserDeleted"
 
             - name: GraphQL__Name
               value: "GraphQLSchema"
