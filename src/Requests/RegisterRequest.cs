@@ -21,4 +21,10 @@ public sealed class RegisterRequest
     /// </summary>
     [GraphQLDescription("Пароль пользователя")]
     public required string Password { get; set; }
+    
+    /// <summary>
+    /// Согласие на обработку персональных данных
+    /// </summary>
+    [GraphQLDescription("Согласие на обработку персональных данных")]
+    public required bool Consent { get; set; }
 }

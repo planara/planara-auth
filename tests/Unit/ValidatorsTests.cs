@@ -10,7 +10,7 @@ public class ValidatorsTests
     public void Register_InvalidEmail_Fails()
     {
         var validator = new RegisterRequestValidator();
-        var request = new RegisterRequest { Email = "akf", Password = "Qwerty1!" };
+        var request = new RegisterRequest { Email = "akf", Password = "Qwerty1!", Consent = true };
 
         var res = validator.Validate(request);
 
@@ -76,7 +76,7 @@ public class ValidatorsTests
     public void Register_PasswordMissingLower_Fails()
     {
         var validator = new RegisterRequestValidator();
-        var request = new RegisterRequest { Email = "a@b.com", Password = "QWERTY1!" }; // нет lower
+        var request = new RegisterRequest { Email = "a@b.com", Password = "QWERTY1!", Consent = true }; // нет lower
 
         var res = validator.Validate(request);
 
@@ -88,7 +88,7 @@ public class ValidatorsTests
     public void Register_PasswordMissingUpper_Fails()
     {
         var validator = new RegisterRequestValidator();
-        var request = new RegisterRequest { Email = "a@b.com", Password = "qwerty1!" }; // нет upper
+        var request = new RegisterRequest { Email = "a@b.com", Password = "qwerty1!", Consent = true }; // нет upper
 
         var res = validator.Validate(request);
 
@@ -100,7 +100,7 @@ public class ValidatorsTests
     public void Register_PasswordMissingDigit_Fails()
     {
         var validator = new RegisterRequestValidator();
-        var request = new RegisterRequest { Email = "a@b.com", Password = "Qwerty!!" };
+        var request = new RegisterRequest { Email = "a@b.com", Password = "Qwerty!!", Consent = true };
 
         var res = validator.Validate(request);
 
@@ -112,11 +112,86 @@ public class ValidatorsTests
     public void Register_PasswordMissingSpecial_Fails()
     {
         var validator = new RegisterRequestValidator();
-        var request = new RegisterRequest { Email = "a@b.com", Password = "Qwerty12" };
+        var request = new RegisterRequest { Email = "a@b.com", Password = "Qwerty12", Consent = true };
 
         var res = validator.Validate(request);
 
         res.IsValid.Should().BeFalse();
         res.Errors.Should().Contain(e => e.ErrorMessage.Contains("спецсимвол", StringComparison.OrdinalIgnoreCase));
+    }
+    
+    [Fact]
+    public void RegisterRequest_ValidRequest_Succeeds()
+    {
+        var validator = new RegisterRequestValidator();
+
+        var result = validator.Validate(new RegisterRequest
+        {
+            Email = "test@planara.local",
+            Password = "Password1!",
+            Consent = true
+        });
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("PASSWORD1!", "строчную")]
+    [InlineData("password1!", "заглавную")]
+    [InlineData("Password!", "цифру")]
+    [InlineData("Password1", "спецсимвол")]
+    public void RegisterRequest_InvalidPasswordComplexity_Fails(
+        string password,
+        string expectedMessagePart)
+    {
+        var validator = new RegisterRequestValidator();
+
+        var result = validator.Validate(new RegisterRequest
+        {
+            Email = "test@planara.local",
+            Password = password,
+            Consent = true
+        });
+
+        result.IsValid.Should().BeFalse();
+
+        result.Errors.Should().Contain(x =>
+            x.ErrorMessage.Contains(expectedMessagePart, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void RegisterRequest_EmptyPassword_Fails()
+    {
+        var validator = new RegisterRequestValidator();
+
+        var result = validator.Validate(new RegisterRequest
+        {
+            Email = "test@planara.local",
+            Password = "",
+            Consent = true
+        });
+
+        result.IsValid.Should().BeFalse();
+
+        result.Errors.Should().Contain(x =>
+            x.ErrorMessage.Contains("Пароль обязателен", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void RegisterRequest_NullPassword_Fails()
+    {
+        var validator = new RegisterRequestValidator();
+
+        var result = validator.Validate(new RegisterRequest
+        {
+            Email = "test@planara.local",
+            Password = null!,
+            Consent = true
+        });
+
+        result.IsValid.Should().BeFalse();
+
+        result.Errors.Should().Contain(x =>
+            x.ErrorMessage.Contains("Пароль обязателен", StringComparison.OrdinalIgnoreCase));
     }
 }

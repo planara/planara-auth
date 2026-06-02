@@ -21,6 +21,7 @@ public static class ApiTestClient
         resp.EnsureSuccessStatusCode();
 
         var json = await resp.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: ct);
+
         return json ?? throw new InvalidOperationException("Empty GraphQL response");
     }
 
@@ -29,4 +30,10 @@ public static class ApiTestClient
 
     public static JsonElement GetData(this JsonDocument doc)
         => doc.RootElement.GetProperty("data");
+
+    public static void AsUser(this HttpClient client, Guid userId)
+    {
+        client.DefaultRequestHeaders.Remove("X-Test-UserId");
+        client.DefaultRequestHeaders.Add("X-Test-UserId", userId.ToString());
+    }
 }

@@ -3,20 +3,20 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Planara.Auth.Data;
 using Planara.Auth.Data.Domain;
-using Planara.Common.Kafka;
 using Planara.Kafka.Configurations;
 using Planara.Kafka.Interfaces;
 
 namespace Planara.Auth.Workers;
 
-public class OutboxPublisher(
+public abstract class OutboxPublisherBase<TMessage>(
     IServiceScopeFactory scopeFactory,
-    IKafkaProducer<UserCreatedMessage> producer,
-    ILogger<OutboxPublisher> logger): BackgroundService
+    IKafkaProducer<TMessage> producer,
+    ILogger logger
+) : BackgroundService
 {
     private readonly string _workerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
     private const int BATCH_SIZE = 50;
-    
+
     [ExcludeFromCodeCoverage]
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
@@ -26,9 +26,8 @@ public class OutboxPublisher(
             {
                 await PublishOnce(cancellationToken);
             }
-            catch (OperationCanceledException e) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                logger.LogWarning(e, "Cancellation requested, outbox publisher stopped");
                 break;
             }
             catch (Exception e)
@@ -38,18 +37,18 @@ public class OutboxPublisher(
             }
         }
     }
-    
+
     public async Task PublishOnce(CancellationToken ct)
     {
         var now = DateTime.UtcNow;
         var lockFor = TimeSpan.FromSeconds(30);
+        var type = typeof(TMessage).Name;
 
         await using var scope = scopeFactory.CreateAsyncScope();
         var dataContext = scope.ServiceProvider.GetRequiredService<DataContext>();
 
         List<OutboxMessage> batch;
 
-        // Получение сообщений на отправку
         await using (var tx = await dataContext.Database.BeginTransactionAsync(ct))
         {
             batch = await dataContext.OutboxMessages
@@ -62,7 +61,7 @@ public class OutboxPublisher(
                     ORDER BY ""CreatedAt"", ""Id""
                     FOR UPDATE SKIP LOCKED
                     LIMIT {2};
-                ", now, nameof(UserCreatedMessage), BATCH_SIZE)
+                ", now, type, BATCH_SIZE)
                 .ToListAsync(ct);
 
             if (batch.Count == 0)
@@ -83,13 +82,14 @@ public class OutboxPublisher(
             await tx.CommitAsync(ct);
         }
 
-        // Публикация сообщений в Kafka
         foreach (var m in batch)
         {
             try
             {
-                var msg = JsonSerializer.Deserialize<UserCreatedMessage>(m.PayloadJson, KafkaJson.DeserializerOptions)
-                          ?? throw new InvalidOperationException("PayloadJson deserialized to null");
+                var msg = JsonSerializer.Deserialize<TMessage>(
+                    m.PayloadJson,
+                    KafkaJson.DeserializerOptions
+                ) ?? throw new InvalidOperationException("PayloadJson deserialized to null");
 
                 await producer.ProduceAsync(m.TopicKey, m.Key, msg, ct);
 
@@ -97,6 +97,7 @@ public class OutboxPublisher(
                 m.ProcessedAt = doneAt;
                 m.UpdatedAt = doneAt;
                 m.LastError = null;
+                m.LockedUntil = null;
             }
             catch (Exception e)
             {
@@ -104,7 +105,9 @@ public class OutboxPublisher(
 
                 m.AttemptCount += 1;
                 m.LastAttemptAt = failAt;
-                m.LastError = e.ToString().Length > 4000 ? e.ToString()[..4000] : e.ToString();
+                m.LastError = e.ToString().Length > 4000
+                    ? e.ToString()[..4000]
+                    : e.ToString();
 
                 var delaySeconds = Math.Min(60, 2 * m.AttemptCount);
                 m.LockedUntil = failAt.AddSeconds(delaySeconds);

@@ -23,6 +23,10 @@ public sealed class RegisterRequestValidator: AbstractValidator<RegisterRequest>
             .Must(ContainsUpper).WithMessage("Пароль должен содержать хотя бы одну заглавную букву.")
             .Must(ContainsDigit).WithMessage("Пароль должен содержать хотя бы одну цифру.")
             .Must(ContainsSpecial).WithMessage("Пароль должен содержать хотя бы один спецсимвол.");
+        
+        RuleFor(x => x.Consent)
+            .NotEmpty().WithMessage("Согласие на обработку пресональных данных обязательное.")
+            .Equal(true).WithMessage("Для регистрации необходимо согласие на обработку персональных данных.");
     }
 
     private static bool ContainsLower(string? s) => !string.IsNullOrEmpty(s) && s.Any(char.IsLower);

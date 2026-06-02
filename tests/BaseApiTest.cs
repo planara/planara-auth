@@ -3,12 +3,14 @@ using Planara.Auth.Data;
 
 namespace Planara.Auth.Tests;
 
-public class BaseApiTest: IClassFixture<ApiTestWebAppFactory>
+public abstract class BaseApiTest : IClassFixture<ApiTestWebAppFactory>, IDisposable
 {
     protected readonly ApiTestWebAppFactory Factory;
     protected readonly IServiceScope Scope;
     protected readonly DataContext Context;
     protected readonly HttpClient Client;
+
+    protected readonly Guid UserId = Guid.NewGuid();
 
     protected BaseApiTest(ApiTestWebAppFactory factory)
     {
@@ -16,11 +18,14 @@ public class BaseApiTest: IClassFixture<ApiTestWebAppFactory>
 
         Scope = factory.Services.CreateScope();
         Context = Scope.ServiceProvider.GetRequiredService<DataContext>();
+
         Client = factory.CreateClient();
+        Client.AsUser(UserId);
     }
 
     public void Dispose()
     {
+        Client.Dispose();
         Scope.Dispose();
     }
 }
