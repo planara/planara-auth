@@ -440,7 +440,7 @@ public class MutationsTests: BaseApiTest
         doc.GetErrors().Should().BeNull();
 
         var msg = await Context.OutboxMessages.SingleAsync();
-        msg.TopicKey.Should().Be("Auth");
+        msg.TopicKey.Should().Be(KafkaTopicKeys.UserCreated);
         msg.Type.Should().Be(nameof(UserCreatedMessage));
         msg.PayloadJson.Should().Contain("out@box.com");
         msg.ProcessedAt.Should().BeNull();
@@ -516,7 +516,7 @@ public class MutationsTests: BaseApiTest
             .AsNoTracking()
             .SingleAsync();
 
-        outbox.TopicKey.Should().Be("Auth");
+        outbox.TopicKey.Should().Be(KafkaTopicKeys.UserDeleted);
         outbox.Type.Should().Be(nameof(UserDeletedMessage));
         outbox.Key.Should().Be(UserId.ToString("N"));
     }

@@ -85,7 +85,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         
         dataContext.OutboxMessages.Add(new OutboxMessage
         {
-            TopicKey = "Auth",
+            TopicKey = KafkaTopicKeys.UserCreated,
             Type = nameof(UserCreatedMessage),
             Key = userId.ToString("N"),
             PayloadJson = JsonSerializer.Serialize(kafkaMessage, KafkaJson.SerializerOptions)
@@ -247,7 +247,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         
         dataContext.OutboxMessages.Add(new OutboxMessage
         {
-            TopicKey = "Auth",
+            TopicKey = KafkaTopicKeys.UserDeleted,
             Type = nameof(UserDeletedMessage),
             Key = userId.ToString("N"),
             PayloadJson = JsonSerializer.Serialize(kafkaMessage, KafkaJson.SerializerOptions)
