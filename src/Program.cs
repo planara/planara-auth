@@ -61,13 +61,13 @@ builder.Services.AddDataContext<DataContext>(
 
 builder.Services
     .AddKafkaProducer<UserCreatedMessage>(builder.Configuration)
+    .AddKafkaProducer<UserDeletedMessage>(builder.Configuration)
     .AddKafkaTopicsInitializer(builder.Configuration);
 
 builder.Services.AddScoped<ITokenService, TokenService>();
 
-builder.Services.AddScoped<OutboxPublisher>();
-if (!builder.Environment.IsEnvironment("Test"))
-    builder.Services.AddHostedService<OutboxPublisher>();
+builder.Services.AddHostedService<UserCreatedOutboxPublisher>();
+builder.Services.AddHostedService<UserDeletedOutboxPublisher>();
 
 var app = builder.Build();
 

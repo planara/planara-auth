@@ -1,14 +1,17 @@
+using System.Net;
 using System.Net.Http.Headers;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Planara.Auth.Data.Domain;
+using Planara.Auth.GraphQL;
+using Planara.Auth.Requests;
 using Planara.Auth.Services;
 using Planara.Common.Kafka;
 
 namespace Planara.Auth.Tests.Api;
 
-[Collection("AuthApi")]
 public class MutationsTests: BaseApiTest
 {
     public MutationsTests(ApiTestWebAppFactory factory) : base(factory) { }
@@ -34,7 +37,7 @@ public class MutationsTests: BaseApiTest
 
         var doc = await Client.PostAsync(mutation, new
         {
-            request = new { email = "  TEST@Example.COM ", password = "Qwerty1!" }
+            request = new { email = "  TEST@Example.COM ", password = "Qwerty1!", consent = true }
         });
 
         doc.GetErrors().Should().BeNull();
@@ -65,7 +68,8 @@ public class MutationsTests: BaseApiTest
         {
             UserId = Guid.NewGuid(),
             Email = "dup@example.com",
-            PasswordHash = "hash"
+            PasswordHash = "hash",
+            IsConsentGiven = true
         });
         await Context.SaveChangesAsync();
 
@@ -77,7 +81,7 @@ public class MutationsTests: BaseApiTest
 
         var doc = await Client.PostAsync(mutation, new
         {
-            request = new { email = "dup@example.com", password = "Qwerty1!" }
+            request = new { email = "dup@example.com", password = "Qwerty1!", consent = true }
         });
 
         var errors = doc.GetErrors();
@@ -95,7 +99,8 @@ public class MutationsTests: BaseApiTest
         {
             UserId = userId,
             Email = "a@b.com",
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Right1!", workFactor: 12)
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Right1!", workFactor: 12),
+            IsConsentGiven = true
         });
         await Context.SaveChangesAsync();
 
@@ -144,7 +149,8 @@ public class MutationsTests: BaseApiTest
         {
             UserId = userId,
             Email = "a@b.com",
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Right1!", workFactor: 12)
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Right1!", workFactor: 12),
+            IsConsentGiven = true
         });
         await Context.SaveChangesAsync();
 
@@ -192,7 +198,7 @@ public class MutationsTests: BaseApiTest
 
         var reg = await Client.PostAsync(register, new
         {
-            request = new { email = "r@r.com", password = "Qwerty1!" }
+            request = new { email = "r@r.com", password = "Qwerty1!", consent = true }
         });
 
         reg.GetErrors().Should().BeNull();
@@ -355,7 +361,7 @@ public class MutationsTests: BaseApiTest
 
         var reg = await Client.PostAsync(register, new
         {
-            request = new { email = "l@l.com", password = "Qwerty1!" }
+            request = new { email = "l@l.com", password = "Qwerty1!", consent = true }
         });
 
         var regData = reg.GetData().GetProperty("register");
@@ -404,7 +410,7 @@ public class MutationsTests: BaseApiTest
 
         var doc = await Client.PostAsync(register, new
         {
-            request = new { email, password = "Qwerty1!" }
+            request = new { email, password = "Qwerty1!", consent = true }
         });
 
         doc.GetErrors().Should().BeNull();
@@ -428,7 +434,7 @@ public class MutationsTests: BaseApiTest
 
         var doc = await Client.PostAsync(mutation, new
         {
-            request = new { email = "out@box.com", password = "Qwerty1!" }
+            request = new { email = "out@box.com", password = "Qwerty1!", consent = true }
         });
 
         doc.GetErrors().Should().BeNull();
@@ -438,5 +444,219 @@ public class MutationsTests: BaseApiTest
         msg.Type.Should().Be(nameof(UserCreatedMessage));
         msg.PayloadJson.Should().Contain("out@box.com");
         msg.ProcessedAt.Should().BeNull();
+    }
+    
+    [Fact]
+    public async Task DeleteAccount_WhenUserExists_RemovesCredentialAndRefreshTokens_AndCreatesUserDeletedOutboxMessage()
+    {
+        await DbTestUtils.ResetAuthDbAsync(Context);
+
+        Context.UserCredentials.Add(new UserCredential
+        {
+            UserId = UserId,
+            Email = "delete@planara.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Password1!"),
+            IsConsentGiven = true
+        });
+
+        Context.RefreshTokens.AddRange(
+            new RefreshToken
+            {
+                Id = Guid.NewGuid(),
+                UserId = UserId,
+                TokenHash = "hash-1",
+                CreatedAtUtc = DateTime.UtcNow,
+                ExpiresAtUtc = DateTime.UtcNow.AddDays(30)
+            },
+            new RefreshToken
+            {
+                Id = Guid.NewGuid(),
+                UserId = UserId,
+                TokenHash = "hash-2",
+                CreatedAtUtc = DateTime.UtcNow,
+                ExpiresAtUtc = DateTime.UtcNow.AddDays(30)
+            });
+
+        await Context.SaveChangesAsync();
+
+        const string mutation = """
+                                mutation DeleteAccount {
+                                  deleteAccount {
+                                    success
+                                  }
+                                }
+                                """;
+
+        using var json = await Client.PostAsync(mutation);
+
+        json.GetErrors().Should().BeNull();
+
+        json.GetData()
+            .GetProperty("deleteAccount")
+            .GetProperty("success")
+            .GetBoolean()
+            .Should()
+            .BeTrue();
+
+        Context.ChangeTracker.Clear();
+
+        var credentialExists = await Context.UserCredentials
+            .AsNoTracking()
+            .AnyAsync(x => x.UserId == UserId);
+
+        credentialExists.Should().BeFalse();
+
+        var refreshTokensCount = await Context.RefreshTokens
+            .AsNoTracking()
+            .CountAsync(x => x.UserId == UserId);
+
+        refreshTokensCount.Should().Be(0);
+
+        var outbox = await Context.OutboxMessages
+            .AsNoTracking()
+            .SingleAsync();
+
+        outbox.TopicKey.Should().Be("Auth");
+        outbox.Type.Should().Be(nameof(UserDeletedMessage));
+        outbox.Key.Should().Be(UserId.ToString("N"));
+    }
+    
+    [Fact]
+    public async Task Register_WhenHttpContextIsNull_SavesNullClientMetadata()
+    {
+        await DbTestUtils.ResetAuthDbAsync(Context);
+
+        var tokenService = Scope.ServiceProvider.GetRequiredService<ITokenService>();
+
+        var mutation = new Mutation(
+            tokenService,
+            new HttpContextAccessor
+            {
+                HttpContext = null
+            });
+
+        await mutation.Register(
+            new RegisterRequest
+            {
+                Email = "null-context@planara.local",
+                Password = "Password1!",
+                Consent = true
+            },
+            Context,
+            CancellationToken.None);
+
+        Context.ChangeTracker.Clear();
+
+        var refreshToken = await Context.RefreshTokens
+            .AsNoTracking()
+            .SingleAsync();
+
+        refreshToken.CreatedByIp.Should().BeNull();
+        refreshToken.UserAgent.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Register_WhenHttpContextHasClientMetadata_SavesIpAndUserAgent()
+    {
+        await DbTestUtils.ResetAuthDbAsync(Context);
+
+        var httpContext = new DefaultHttpContext();
+
+        httpContext.Connection.RemoteIpAddress = IPAddress.Parse("127.0.0.1");
+        httpContext.Request.Headers.UserAgent = "Planara.Tests";
+
+        var tokenService = Scope.ServiceProvider.GetRequiredService<ITokenService>();
+
+        var mutation = new Mutation(
+            tokenService,
+            new HttpContextAccessor
+            {
+                HttpContext = httpContext
+            });
+
+        await mutation.Register(
+            new RegisterRequest
+            {
+                Email = "metadata@planara.local",
+                Password = "Password1!",
+                Consent = true
+            },
+            Context,
+            CancellationToken.None);
+
+        Context.ChangeTracker.Clear();
+
+        var refreshToken = await Context.RefreshTokens
+            .AsNoTracking()
+            .SingleAsync();
+
+        refreshToken.CreatedByIp.Should().Be("127.0.0.1");
+        refreshToken.UserAgent.Should().Be("Planara.Tests");
+    }
+
+    [Fact]
+    public async Task Register_WhenHttpContextHasNoRemoteIp_SavesNullClientIp()
+    {
+        await DbTestUtils.ResetAuthDbAsync(Context);
+
+        var httpContext = new DefaultHttpContext();
+
+        httpContext.Connection.RemoteIpAddress = null;
+
+        var tokenService = Scope.ServiceProvider.GetRequiredService<ITokenService>();
+
+        var mutation = new Mutation(
+            tokenService,
+            new HttpContextAccessor
+            {
+                HttpContext = httpContext
+            });
+
+        await mutation.Register(
+            new RegisterRequest
+            {
+                Email = "no-ip@planara.local",
+                Password = "Password1!",
+                Consent = true
+            },
+            Context,
+            CancellationToken.None);
+
+        Context.ChangeTracker.Clear();
+
+        var refreshToken = await Context.RefreshTokens
+            .AsNoTracking()
+            .SingleAsync();
+
+        refreshToken.CreatedByIp.Should().BeNull();
+    }
+    
+    [Fact]
+    public async Task DeleteAccount_WhenCredentialDoesNotExist_ReturnsSuccess_AndDoesNotCreateOutboxMessage()
+    {
+        await DbTestUtils.ResetAuthDbAsync(Context);
+
+        const string mutation = """
+                                mutation DeleteAccount {
+                                  deleteAccount {
+                                    success
+                                  }
+                                }
+                                """;
+
+        using var json = await Client.PostAsync(mutation);
+
+        json.GetErrors().Should().BeNull();
+
+        json.GetData()
+            .GetProperty("deleteAccount")
+            .GetProperty("success")
+            .GetBoolean()
+            .Should()
+            .BeTrue();
+
+        var outboxCount = await Context.OutboxMessages.CountAsync();
+
+        outboxCount.Should().Be(0);
     }
 }

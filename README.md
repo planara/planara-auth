@@ -6,33 +6,89 @@
 
 ## Planara.Auth
 
-Сервис аутентификации и авторизации для экосистемы Planara.
-Отвечает за регистрацию пользователей, вход, обновление токенов и управление сессиями.
+Сервис аутентификации и авторизации.
 
-Реализован как ASP.NET Core + GraphQL сервис с JWT access токенами
-и refresh токенами с ротацией.
+Отвечает за регистрацию пользователей, вход, обновление access токенов,
+управление refresh токенами, выход из аккаунта и удаление аккаунта пользователя.
 
-## Features
+Реализован как ASP.NET Core + GraphQL сервис с JWT access токенами,
+refresh токенами с ротацией и outbox-публикацией событий в Kafka.
 
-- Регистрация пользователей
-- Вход по email / паролю
-- JWT access tokens
-- Refresh tokens с ротацией и отзывом
-- Logout с отзывом refresh токена
-- Query `me` для получения текущего пользователя
-- Валидация входных данных (FluentValidation)
-- GraphQL API (HotChocolate)
+## Возможности
+
+* Регистрация пользователей
+* Вход по email / паролю
+* JWT access tokens
+* Refresh tokens с ротацией
+* Logout с отзывом refresh токена
+* Удаление аккаунта текущего пользователя
+* Публикация события создания пользователя в Kafka
+* Публикация события удаления пользователя в Kafka
+* Outbox pattern для надежной доставки событий
+* JWT авторизация (`[Authorize]`)
+* Валидация входных данных (FluentValidation)
+* GraphQL API (HotChocolate)
 
 ## GraphQL API
 
-### Mutations
-
-- `register(request: RegisterRequestInput): AuthResponse`
-- `login(login: LoginRequestInput): AuthResponse`
-- `refresh(request: RefreshRequestInput): AuthResponse`
-- `logout(request: LogoutRequestInput): LogoutResponse`
-
 ### Queries
 
-- `me: UUID` — текущий пользователь (требует авторизации)
+* `me: UUID`
+  Возвращает ID текущего пользователя
+  *(требует авторизации)*
 
+### Mutations
+
+* `register(request: RegisterRequestInput): AuthResponse`
+  Регистрирует пользователя и выдает пару access / refresh токенов
+
+* `login(login: LoginRequestInput): AuthResponse`
+  Выполняет вход по email и паролю
+
+* `refresh(request: RefreshRequestInput): AuthResponse`
+  Обновляет access токен по refresh токену и выполняет ротацию refresh токена
+
+* `logout(request: LogoutRequestInput): LogoutResponse`
+  Отзывает refresh токен пользователя
+
+* `deleteAccount: DeleteAccountResponse`
+  Удаляет аккаунт текущего пользователя
+  *(требует авторизации)*
+
+## Запуск
+
+Перед запуском сервиса необходимо поднять инфраструктуру через Docker Compose.
+
+```bash
+docker compose up -d
+```
+
+После запуска инфраструктуры можно запустить сервис:
+
+```bash
+dotnet run --project src/Planara.Auth.csproj
+```
+
+GraphQL endpoint:
+
+```text
+/graphql
+```
+
+## Тестирование
+
+Для запуска тестов требуется Docker, так как интеграционные тесты используют Testcontainers.
+
+Запуск тестов:
+
+```bash
+dotnet test Planara.Auth.sln
+```
+
+Запуск тестов с покрытием:
+
+```bash
+dotnet test Planara.Auth.sln \
+--collect:"XPlat Code Coverage" \
+--settings coverlet.runsettings
+```

@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using HotChocolate;
 using HotChocolate.Types;
 using Microsoft.AspNetCore.Authorization;
 using Planara.Common.Auth.Claims;

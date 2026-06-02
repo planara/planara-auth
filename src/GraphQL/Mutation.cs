@@ -14,6 +14,7 @@ using Planara.Auth.Validators;
 using Planara.Common.Exceptions;
 using Planara.Common.Kafka;
 using Planara.Kafka.Configurations;
+using Planara.Common.Auth.Claims;
 using ClaimTypes = Planara.Common.Auth.Claims.ClaimTypes;
 
 namespace Planara.Auth.GraphQL;
@@ -57,7 +58,8 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         {
             UserId = userId,
             Email = email,
-            PasswordHash = hash
+            PasswordHash = hash,
+            IsConsentGiven = request.Consent
         });
 
         var (access, accessExp) = tokenService.GenerateAccessToken(BuildClaims(userId));
@@ -218,6 +220,44 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         }
 
         return new LogoutResponse { Success = true };
+    }
+    
+    [Authorize]
+    [GraphQLDescription("Удаление аккаунта текущего пользователя")]
+    public async Task<DeleteAccountResponse> DeleteAccount(
+        [Service] DataContext dataContext,
+        ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        var userId = user.GetUserId();
+
+        var credential = await dataContext.UserCredentials
+            .SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+
+        if (credential is null)
+            return new DeleteAccountResponse { Success = true };
+
+        var refreshTokens = await dataContext.RefreshTokens
+            .Where(x => x.UserId == userId)
+            .ToListAsync(cancellationToken);
+
+        dataContext.RefreshTokens.RemoveRange(refreshTokens);
+
+        var kafkaMessage = new UserDeletedMessage { UserId = userId };
+        
+        dataContext.OutboxMessages.Add(new OutboxMessage
+        {
+            TopicKey = "Auth",
+            Type = nameof(UserDeletedMessage),
+            Key = userId.ToString("N"),
+            PayloadJson = JsonSerializer.Serialize(kafkaMessage, KafkaJson.SerializerOptions)
+        });
+
+        dataContext.UserCredentials.Remove(credential);
+
+        await dataContext.SaveChangesAsync(cancellationToken);
+
+        return new DeleteAccountResponse { Success = true };
     }
 
     /// <summary>

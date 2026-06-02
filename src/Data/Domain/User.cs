@@ -25,4 +25,14 @@ public class UserCredential: BaseEntity
     /// </summary>
     [MaxLength(100)]
     public required string PasswordHash { get; set; }
+
+    /// <summary>
+    /// Согласие на обработку персональных данных
+    /// </summary>
+    public required bool IsConsentGiven { get; set; } = true;
+    
+    /// <summary>
+    /// Когда было получено согласие на обработку персональных данных
+    /// </summary>
+    public DateTime ConsentGivenAt { get; set; } = DateTime.UtcNow;
 }
