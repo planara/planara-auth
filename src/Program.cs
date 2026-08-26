@@ -27,6 +27,7 @@ builder.Services
     // .AddCors()
     .AddLogging();
 
+// GraphQL
 builder.Services
     .AddRouting()
     .AddGraphQLServer()
@@ -51,23 +52,34 @@ builder.Services
         builder.Configuration.GetValue<string>("GraphQL:Name")!,
         WellKnownSchema.Auth
     )
+    .AddHttpRequestInterceptor<RegistrationHttpRequestInterceptor>()
     .InitializeOnStartup();
 
+// Database
 builder.Services.AddDataContext<DataContext>(
     builder.Configuration.GetValue<string>("DbConnections:Postgres:ConnectionString")!,
     builder.Configuration.GetValue<int>("DbConnections:Postgres:MaxRetry"),
     builder.Configuration.GetValue<int>("DbConnections:Postgres:MaxDelaySec")
 );
 
+// Kafka
 builder.Services
     .AddKafkaProducer<UserCreatedMessage>(builder.Configuration)
     .AddKafkaProducer<UserDeletedMessage>(builder.Configuration)
+    .AddKafkaProducer<EmailConfirmationMessage>(builder.Configuration)
     .AddKafkaTopicsInitializer(builder.Configuration);
 
+// Services
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddSingleton<IRegistrationCryptoService, RegistrationCryptoService>();
 
+// Hosted
 builder.Services.AddHostedService<UserCreatedOutboxPublisher>();
 builder.Services.AddHostedService<UserDeletedOutboxPublisher>();
+builder.Services.AddHostedService<EmailConfirmationOutboxPublisher>();
+builder.Services.AddHostedService<RegistrationCleanupWorker>();
+builder.Services.AddHostedService<RefreshTokenCleanupWorker>();
+builder.Services.AddHostedService<OutboxCleanupWorker>();
 
 var app = builder.Build();
 

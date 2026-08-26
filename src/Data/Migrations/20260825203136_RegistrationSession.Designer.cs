@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Planara.Auth.Data;
@@ -11,9 +12,11 @@ using Planara.Auth.Data;
 namespace Planara.Auth.Data.Migrations
 {
     [DbContext(typeof(DataContext))]
-    partial class DataContextModelSnapshot : ModelSnapshot
+    [Migration("20260825203136_RegistrationSession")]
+    partial class RegistrationSession
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,96 +24,6 @@ namespace Planara.Auth.Data.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
-
-            modelBuilder.Entity("Planara.Auth.Data.Domain.Consent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ConsentVersionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("GivenAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("IpAddress")
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)");
-
-                    b.Property<Guid?>("RegistrationSessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("UserAgent")
-                        .HasMaxLength(1024)
-                        .HasColumnType("character varying(1024)");
-
-                    b.Property<Guid?>("UserCredentialId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ConsentVersionId");
-
-                    b.HasIndex("RegistrationSessionId");
-
-                    b.HasIndex("UserCredentialId");
-
-                    b.ToTable("UserConsents");
-                });
-
-            modelBuilder.Entity("Planara.Auth.Data.Domain.ConsentVersion", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("EffectiveAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("HtmlContent")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsCurrent")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Version")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("ConsentVersions");
-                });
 
             modelBuilder.Entity("Planara.Auth.Data.Domain.OutboxMessage", b =>
                 {
@@ -332,6 +245,9 @@ namespace Planara.Auth.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime>("ConsentGivenAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -342,6 +258,9 @@ namespace Planara.Auth.Data.Migrations
 
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("IsConsentGiven")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
@@ -359,31 +278,6 @@ namespace Planara.Auth.Data.Migrations
                     b.ToTable("UserCredentials");
                 });
 
-            modelBuilder.Entity("Planara.Auth.Data.Domain.Consent", b =>
-                {
-                    b.HasOne("Planara.Auth.Data.Domain.ConsentVersion", "ConsentVersion")
-                        .WithMany("Consents")
-                        .HasForeignKey("ConsentVersionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Planara.Auth.Data.Domain.RegistrationSession", "RegistrationSession")
-                        .WithMany("Consents")
-                        .HasForeignKey("RegistrationSessionId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Planara.Auth.Data.Domain.UserCredential", "UserCredential")
-                        .WithMany("Consents")
-                        .HasForeignKey("UserCredentialId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.Navigation("ConsentVersion");
-
-                    b.Navigation("RegistrationSession");
-
-                    b.Navigation("UserCredential");
-                });
-
             modelBuilder.Entity("Planara.Auth.Data.Domain.RegistrationEmailVerification", b =>
                 {
                     b.HasOne("Planara.Auth.Data.Domain.RegistrationSession", "RegistrationSession")
@@ -395,21 +289,9 @@ namespace Planara.Auth.Data.Migrations
                     b.Navigation("RegistrationSession");
                 });
 
-            modelBuilder.Entity("Planara.Auth.Data.Domain.ConsentVersion", b =>
-                {
-                    b.Navigation("Consents");
-                });
-
             modelBuilder.Entity("Planara.Auth.Data.Domain.RegistrationSession", b =>
                 {
-                    b.Navigation("Consents");
-
                     b.Navigation("EmailVerification");
-                });
-
-            modelBuilder.Entity("Planara.Auth.Data.Domain.UserCredential", b =>
-                {
-                    b.Navigation("Consents");
                 });
 #pragma warning restore 612, 618
         }

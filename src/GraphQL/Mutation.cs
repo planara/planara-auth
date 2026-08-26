@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Planara.Auth.Data;
 using Planara.Auth.Data.Domain;
+using Planara.Auth.Data.Enums;
+using Planara.Auth.Registration;
 using Planara.Auth.Requests;
 using Planara.Auth.Responses;
 using Planara.Auth.Services;
@@ -33,73 +35,6 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
     /// </summary>
     private string? UserAgent =>
         http.HttpContext?.Request.Headers.UserAgent.ToString();
-    
-    [AllowAnonymous]
-    [GraphQLDescription("Регистрация пользователя и выдача пары access/refresh токенов")]
-    public async Task<AuthResponse> Register(
-        [GraphQLDescription("Данные для регистрации")]
-        [UseFluentValidation, UseValidator<RegisterRequestValidator>]
-        RegisterRequest request,
-        [Service] DataContext dataContext,
-        CancellationToken cancellationToken)
-    {
-        var email = request.Email.Trim().ToLowerInvariant();
-
-        var exists = await dataContext.UserCredentials
-            .AnyAsync(x => x.Email == email, cancellationToken);
-        
-        if (exists)
-            throw new GraphQLException("Email already registered");
-
-        var userId = Guid.NewGuid();
-        var hash = BCrypt.Net.BCrypt.HashPassword(request.Password, workFactor: 12);
-
-        dataContext.UserCredentials.Add(new UserCredential
-        {
-            UserId = userId,
-            Email = email,
-            PasswordHash = hash,
-            IsConsentGiven = request.Consent
-        });
-
-        var (access, accessExp) = tokenService.GenerateAccessToken(BuildClaims(userId));
-        var (refreshRaw, refreshHash) = tokenService.GenerateRefreshToken();
-        var refreshExp = DateTime.UtcNow.AddDays(30);
-
-        dataContext.RefreshTokens.Add(new RefreshToken
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            TokenHash = refreshHash,
-            CreatedAtUtc = DateTime.UtcNow,
-            ExpiresAtUtc = refreshExp,
-            CreatedByIp = ClientIp,
-            UserAgent = UserAgent
-        });
-        
-        var kafkaMessage = new UserCreatedMessage
-        {
-            UserId = userId,
-            Email = email
-        };
-        
-        dataContext.OutboxMessages.Add(new OutboxMessage
-        {
-            TopicKey = KafkaTopicKeys.UserCreated,
-            Type = nameof(UserCreatedMessage),
-            Key = userId.ToString("N"),
-            PayloadJson = JsonSerializer.Serialize(kafkaMessage, KafkaJson.SerializerOptions)
-        });
-
-        await dataContext.SaveChangesAsync(cancellationToken);
-
-        return new AuthResponse{
-            AccessToken = access, 
-            AccessExpiresAtUtc = accessExp, 
-            RefreshToken = refreshRaw, 
-            RefreshExpiresAtUtc = refreshExp
-        };
-    }
 
     [AllowAnonymous]
     [GraphQLDescription("Вход в аккаунт и выдача новой пары access/refresh токенов")]
@@ -126,7 +61,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         var (refreshRaw, refreshHash) = tokenService.GenerateRefreshToken();
         var refreshExp = DateTime.UtcNow.AddDays(30);
 
-        dataContext.RefreshTokens.Add(new RefreshToken
+        await dataContext.RefreshTokens.AddAsync(new RefreshToken
         {
             Id = Guid.NewGuid(),
             UserId = cred.UserId,
@@ -135,7 +70,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             ExpiresAtUtc = refreshExp,
             CreatedByIp = ClientIp,
             UserAgent = UserAgent
-        });
+        }, cancellationToken);
 
         await dataContext.SaveChangesAsync(cancellationToken);
 
@@ -176,7 +111,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         stored.RevokedAtUtc = DateTime.UtcNow;
         stored.ReplacedByTokenHash = newHash;
 
-        dataContext.RefreshTokens.Add(new RefreshToken
+        await dataContext.RefreshTokens.AddAsync(new RefreshToken
         {
             Id = Guid.NewGuid(),
             UserId = stored.UserId,
@@ -185,7 +120,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             ExpiresAtUtc = newExp,
             CreatedByIp = ClientIp,
             UserAgent = UserAgent
-        });
+        }, cancellationToken);
 
         var (access, accessExp) = tokenService.GenerateAccessToken(BuildClaims(stored.UserId));
 
@@ -245,19 +180,152 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
 
         var kafkaMessage = new UserDeletedMessage { UserId = userId };
         
-        dataContext.OutboxMessages.Add(new OutboxMessage
+        await dataContext.OutboxMessages.AddAsync(new OutboxMessage
         {
             TopicKey = KafkaTopicKeys.UserDeleted,
             Type = nameof(UserDeletedMessage),
             Key = userId.ToString("N"),
             PayloadJson = JsonSerializer.Serialize(kafkaMessage, KafkaJson.SerializerOptions)
-        });
+        }, cancellationToken);
 
         dataContext.UserCredentials.Remove(credential);
 
         await dataContext.SaveChangesAsync(cancellationToken);
 
         return new DeleteAccountResponse { Success = true };
+    }
+    
+    [AllowAnonymous]
+    [GraphQLDescription("Начало регистрации, ввод почты")]
+    public async Task<RegistrationFlowResponse> BeginRegistration(
+        [GraphQLDescription("Адрес электронной почты пользователя")]
+        [UseFluentValidation, UseValidator<BeginRegistrationRequestValidator>] 
+        BeginRegistrationRequest request,
+        [GlobalState(RegistrationRequest.ContextKey)] RegistrationRequestContext registrationContext,
+        [Service] DataContext dataContext,
+        [Service] IRegistrationCryptoService registrationCryptoService,
+        CancellationToken cancellationToken)
+    {
+        var email = request.Email.Trim().ToLowerInvariant();
+        
+        var registeredUserExists = await dataContext.UserCredentials
+            .AnyAsync(x => x.Email == email, cancellationToken);
+        
+        if (registeredUserExists)
+            throw new GraphQLException("Пользователь с таким адресом электронной почты уже зарегистрирован.");
+        
+        // Interceptor уже восстановил регистрацию
+        if (registrationContext.HasSession)
+        {
+            if (!string.Equals(registrationContext.Email, email, StringComparison.Ordinal))
+            {
+                throw new GraphQLException(
+                    ErrorBuilder.New()
+                        .SetCode("REGISTRATION_EMAIL_MISMATCH")
+                        .SetMessage("В браузере уже активна регистрация с другим адресом электронной почты.")
+                        .Build());
+            }
+
+            return new RegistrationFlowResponse
+            {
+                SessionToken = registrationContext.SessionToken!,
+                Step = registrationContext.CurrentStep!.Value,
+                NextStep = registrationContext.RequiredStep!.Value
+            };
+        }
+        
+        var pendingRegistration = await dataContext.RegistrationSessions
+            .FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
+
+        if (pendingRegistration is not null && pendingRegistration.ExpiresAt <= DateTime.UtcNow)
+        {
+            dataContext.RegistrationSessions.Remove(pendingRegistration);
+
+            await dataContext.SaveChangesAsync(cancellationToken);
+        }
+        
+        var existingRegistration = await dataContext.RegistrationSessions
+                .FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
+        
+        // Восстановление существующей регистрации
+        if (existingRegistration is not null)
+        {
+            var sessionToken = registrationCryptoService.GenerateSessionToken();
+
+            existingRegistration.SessionTokenHash = registrationCryptoService.HashSessionToken(sessionToken);
+
+            await RegistrationVerification
+                .IssueCodeAsync(
+                    existingRegistration,
+                    dataContext,
+                    registrationCryptoService,
+                    cancellationToken);
+
+            await dataContext.SaveChangesAsync(cancellationToken);
+
+            var registrationJwt = tokenService
+                .GenerateRegistrationToken(
+                    existingRegistration.Id,
+                    RegistrationAuthLevel.Challenge,
+                    existingRegistration.ExpiresAt);
+
+            RegistrationRequest.SetCookie(http.HttpContext!, registrationJwt, existingRegistration.ExpiresAt);
+
+            return new RegistrationFlowResponse
+            {
+                SessionToken = sessionToken,
+                Step = existingRegistration.CurrentStep,
+                NextStep = RegistrationStep.Code
+            };
+        }
+        
+        // Новая регистрация
+        var newSessionToken = registrationCryptoService.GenerateSessionToken();
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(2);
+        
+        var registration = new RegistrationSession
+        {
+            CurrentStep = RegistrationStep.Email,
+            NextStep = RegistrationStep.Code,
+            Email = email,
+            SessionTokenHash = registrationCryptoService.HashSessionToken(newSessionToken),
+            ExpiresAt = expiresAt.UtcDateTime
+        };
+        
+        var consentVersion = await dataContext.ConsentVersions
+            .SingleAsync(x => x.Type == ConsentType.PersonalData && x.IsCurrent, cancellationToken);
+        
+        registration.Consents.Add(
+            new Consent
+            {
+                ConsentVersionId = consentVersion.Id,
+                GivenAt = DateTime.UtcNow,
+                IpAddress = ClientIp,
+                UserAgent = UserAgent
+            });
+
+        await dataContext.RegistrationSessions.AddAsync(registration, cancellationToken);
+        
+        await RegistrationVerification
+            .IssueCodeAsync(
+                registration,
+                dataContext,
+                registrationCryptoService,
+                cancellationToken);
+        
+        await dataContext.SaveChangesAsync(cancellationToken);
+        
+        var newRegistrationJwt =
+            tokenService.GenerateRegistrationToken(registration.Id, RegistrationAuthLevel.Challenge, registration.ExpiresAt);
+
+        RegistrationRequest.SetCookie(http.HttpContext!, newRegistrationJwt, registration.ExpiresAt);
+        
+        return new RegistrationFlowResponse
+        {
+            SessionToken = newSessionToken,
+            Step = registration.CurrentStep,
+            NextStep = registration.NextStep
+        };
     }
 
     /// <summary>
