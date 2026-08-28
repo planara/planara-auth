@@ -10,6 +10,8 @@ public static class RegistrationRequest
 
     public const string SessionTokenHeader = "X-Planara-Registration-Token";
 
+    public const string SessionKey = "planara.registration.session";
+
     public static void SetCookie(HttpContext context, string jwt, DateTime expiresAtUtc)
     {
         context.Response.Cookies.Append(CookieName, jwt,

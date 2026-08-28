@@ -9,6 +9,8 @@ namespace Planara.Auth.Services;
 
 public static class RegistrationVerification
 {
+    public const int MaxAttempts = 5;
+    
     public static async Task IssueCodeAsync(
         RegistrationSession registration,
         DataContext dataContext,

@@ -33,8 +33,8 @@ public enum RegistrationStep
     Personal,
     
     /// <summary>
-    /// Добавление аватара профиля (опционально)
+    /// Добавление персональной информации
     /// </summary>
-    [GraphQLDescription("Добавление аватара профиля (опционально)")]
-    Avatar
+    [GraphQLDescription("Добавление персональной информации")]
+    Completed,
 }

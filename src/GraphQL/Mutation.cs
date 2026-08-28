@@ -27,14 +27,12 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
     /// <summary>
     /// IP-адрес клиента, с которого выполняется текущий запрос
     /// </summary>
-    private string? ClientIp =>
-        http.HttpContext?.Connection.RemoteIpAddress?.ToString();
+    private string? ClientIp => http.HttpContext?.Connection.RemoteIpAddress?.ToString();
 
     /// <summary>
     /// User-Agent клиента, с которого выполняется текущий запрос
     /// </summary>
-    private string? UserAgent =>
-        http.HttpContext?.Request.Headers.UserAgent.ToString();
+    private string? UserAgent => http.HttpContext?.Request.Headers.UserAgent.ToString();
 
     [AllowAnonymous]
     [GraphQLDescription("Вход в аккаунт и выдача новой пары access/refresh токенов")]
@@ -219,11 +217,10 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         {
             if (!string.Equals(registrationContext.Email, email, StringComparison.Ordinal))
             {
-                throw new GraphQLException(
-                    ErrorBuilder.New()
-                        .SetCode("REGISTRATION_EMAIL_MISMATCH")
-                        .SetMessage("В браузере уже активна регистрация с другим адресом электронной почты.")
-                        .Build());
+                throw new GraphQLException(ErrorBuilder.New()
+                    .SetCode("REGISTRATION_EMAIL_MISMATCH")
+                    .SetMessage("В браузере уже активна регистрация с другим адресом электронной почты.")
+                    .Build());
             }
 
             return new RegistrationFlowResponse
@@ -245,7 +242,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         }
         
         var existingRegistration = await dataContext.RegistrationSessions
-                .FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
+            .FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
         
         // Восстановление существующей регистрации
         if (existingRegistration is not null)
@@ -255,19 +252,12 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             existingRegistration.SessionTokenHash = registrationCryptoService.HashSessionToken(sessionToken);
 
             await RegistrationVerification
-                .IssueCodeAsync(
-                    existingRegistration,
-                    dataContext,
-                    registrationCryptoService,
-                    cancellationToken);
+                .IssueCodeAsync(existingRegistration, dataContext, registrationCryptoService, cancellationToken);
 
             await dataContext.SaveChangesAsync(cancellationToken);
 
             var registrationJwt = tokenService
-                .GenerateRegistrationToken(
-                    existingRegistration.Id,
-                    RegistrationAuthLevel.Challenge,
-                    existingRegistration.ExpiresAt);
+                .GenerateRegistrationToken(existingRegistration.Id, RegistrationAuthLevel.Challenge, existingRegistration.ExpiresAt);
 
             RegistrationRequest.SetCookie(http.HttpContext!, registrationJwt, existingRegistration.ExpiresAt);
 
@@ -295,28 +285,22 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         var consentVersion = await dataContext.ConsentVersions
             .SingleAsync(x => x.Type == ConsentType.PersonalData && x.IsCurrent, cancellationToken);
         
-        registration.Consents.Add(
-            new Consent
-            {
-                ConsentVersionId = consentVersion.Id,
-                GivenAt = DateTime.UtcNow,
-                IpAddress = ClientIp,
-                UserAgent = UserAgent
-            });
+        registration.Consents.Add(new Consent 
+        {
+            ConsentVersionId = consentVersion.Id,
+            GivenAt = DateTime.UtcNow,
+            IpAddress = ClientIp,
+            UserAgent = UserAgent
+        });
 
         await dataContext.RegistrationSessions.AddAsync(registration, cancellationToken);
         
-        await RegistrationVerification
-            .IssueCodeAsync(
-                registration,
-                dataContext,
-                registrationCryptoService,
-                cancellationToken);
+        await RegistrationVerification.IssueCodeAsync(registration, dataContext, registrationCryptoService, cancellationToken);
         
         await dataContext.SaveChangesAsync(cancellationToken);
         
-        var newRegistrationJwt =
-            tokenService.GenerateRegistrationToken(registration.Id, RegistrationAuthLevel.Challenge, registration.ExpiresAt);
+        var newRegistrationJwt = tokenService.GenerateRegistrationToken(
+            registration.Id, RegistrationAuthLevel.Challenge, registration.ExpiresAt);
 
         RegistrationRequest.SetCookie(http.HttpContext!, newRegistrationJwt, registration.ExpiresAt);
         
@@ -326,6 +310,270 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             Step = registration.CurrentStep,
             NextStep = registration.NextStep
         };
+    }
+    
+    [AllowAnonymous]
+    [UseRegistrationStep(RegistrationStep.Code)]
+    [GraphQLDescription("Подтверждение адреса электронной почты")]
+    public async Task<RegistrationFlowResponse> VerifyRegistrationCode(
+        [GraphQLDescription("Код подтверждения из письма")]
+        [UseFluentValidation, UseValidator<VerifyRegistrationCodeRequestValidator>]
+        VerifyRegistrationCodeRequest request,
+        [GlobalState(RegistrationRequest.ContextKey)] RegistrationRequestContext registrationContext,
+        [Service] DataContext dataContext,
+        [Service] IRegistrationCryptoService registrationCryptoService,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+    
+        var registrationId = registrationContext.RegistrationId!.Value;
+    
+        var registration = await dataContext.RegistrationSessions
+            .SingleOrDefaultAsync(x => x.Id == registrationId && x.ExpiresAt > now, cancellationToken);
+    
+        var verification = await dataContext.RegistrationEmailVerifications
+            .SingleOrDefaultAsync(x => x.RegistrationSessionId == registration!.Id, cancellationToken);
+    
+        if (verification is null)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("REGISTRATION_CODE_NOT_FOUND")
+                .SetMessage("Код подтверждения отсутствует.")
+                .Build());
+        }
+    
+        if (verification.ExpiresAt <= now)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("REGISTRATION_CODE_EXPIRED")
+                .SetMessage("Срок действия кода подтверждения истёк.")
+                .Build());
+        }
+    
+        if (verification.Attempts >= RegistrationVerification.MaxAttempts)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("REGISTRATION_CODE_ATTEMPTS_EXCEEDED")
+                .SetMessage("Превышено количество попыток ввода кода.")
+                .Build());
+        }
+    
+        var codeValid = registrationCryptoService.VerifyCode(request.Code, verification.CodeHash);
+    
+        if (!codeValid)
+        {
+            verification.Attempts++;
+    
+            await dataContext.SaveChangesAsync(cancellationToken);
+    
+            var attemptsLeft = Math.Max(0, RegistrationVerification.MaxAttempts - verification.Attempts);
+    
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode(attemptsLeft == 0 ? "REGISTRATION_CODE_ATTEMPTS_EXCEEDED" : "REGISTRATION_CODE_INVALID")
+                .SetMessage(attemptsLeft == 0 ? "Превышено количество попыток ввода кода." : "Неверный код подтверждения.")
+                .SetExtension("attemptsLeft", attemptsLeft)
+                .Build());
+        }
+        
+        RegistrationStateMachine.CompleteEmailVerification(registration!);
+        dataContext.RegistrationEmailVerifications.Remove(verification);
+    
+        await dataContext.SaveChangesAsync(cancellationToken);
+        
+        var authorizedJwt = tokenService.GenerateRegistrationToken(registration!.Id, RegistrationAuthLevel.Authorized, registration.ExpiresAt);
+    
+        RegistrationRequest.SetCookie(http.HttpContext!, authorizedJwt, registration.ExpiresAt);
+    
+        return new RegistrationFlowResponse
+        {
+            SessionToken = registrationContext.SessionToken!,
+            Step = registration.CurrentStep,
+            NextStep = RegistrationStateMachine.GetRequiredStep(registration.NextStep, RegistrationAuthLevel.Authorized)
+        };
+    }
+    
+    [AllowAnonymous]
+    [UseRegistrationStep(RegistrationStep.Code)]
+    [GraphQLDescription("Повторная отправка кода подтверждения")]
+    public async Task<bool> ResendRegistrationCode(
+        [GlobalState(RegistrationRequest.ContextKey)] RegistrationRequestContext registrationContext,
+        [Service] DataContext dataContext,
+        [Service] IRegistrationCryptoService registrationCryptoService,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+    
+        var registration = await dataContext.RegistrationSessions.SingleOrDefaultAsync(x => 
+            x.Id == registrationContext.RegistrationId!.Value && x.ExpiresAt > now, cancellationToken);
+    
+        var verification = await dataContext.RegistrationEmailVerifications.SingleOrDefaultAsync(x => 
+            x.RegistrationSessionId == registration!.Id, cancellationToken);
+    
+        if (verification is not null && verification.ResendAvailableAt > now)
+        {
+            var retryAfter = Math.Max(1, (int)Math.Ceiling((verification.ResendAvailableAt - now).TotalSeconds));
+    
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("REGISTRATION_CODE_RESEND_COOLDOWN")
+                .SetMessage("Код уже был недавно отправлен.")
+                .SetExtension("retryAfter", retryAfter)
+                .Build());
+        }
+    
+        await RegistrationVerification.IssueCodeAsync(registration!, dataContext, registrationCryptoService, cancellationToken);
+    
+        await dataContext.SaveChangesAsync(cancellationToken);
+    
+        return true;
+    }
+    
+    [AllowAnonymous]
+    [UseRegistrationStep(RegistrationStep.Password)]
+    [GraphQLDescription("Установка пароля при регистрации")]
+    public async Task<RegistrationFlowResponse> SetRegistrationPassword(
+        [GraphQLDescription("Пароль пользователя")]
+        [UseFluentValidation, UseValidator<SetRegistrationPasswordRequestValidator>]
+        SetRegistrationPasswordRequest request,
+        [GlobalState(RegistrationRequest.ContextKey)] RegistrationRequestContext registrationContext,
+        [Service] DataContext dataContext,
+        CancellationToken cancellationToken)
+    {
+        var registration = await dataContext.RegistrationSessions.SingleOrDefaultAsync(x => 
+            x.Id == registrationContext.RegistrationId!.Value && x.ExpiresAt > DateTime.UtcNow, cancellationToken);
+
+        registration!.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, workFactor: 12);
+
+        RegistrationStateMachine.CompleteStep(registration, RegistrationStep.Password);
+
+        await dataContext.SaveChangesAsync(cancellationToken);
+
+        return new RegistrationFlowResponse
+        {
+            SessionToken = registrationContext.SessionToken!,
+            Step = registration.CurrentStep,
+            NextStep = registration.NextStep
+        };
+    }
+    
+    [AllowAnonymous]
+    [UseRegistrationStep(RegistrationStep.Personal)]
+    [GraphQLDescription("Завершение регистрации пользователя")]
+    public async Task<AuthResponse> CompleteRegistration(
+        [GraphQLDescription("Персональные данные пользователя")]
+        [UseFluentValidation, UseValidator<SetRegistrationPersonalRequestValidator>]
+        SetRegistrationPersonalRequest request,
+        [GlobalState(RegistrationRequest.ContextKey)] RegistrationRequestContext registrationContext,
+        [LocalState(RegistrationRequest.SessionKey)] RegistrationSession registration,
+        [Service] DataContext dataContext,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+    
+        registration.Name = NormalizeOptional(request.Name);
+        registration.Surname = NormalizeOptional(request.Surname);
+    
+        if (string.IsNullOrWhiteSpace(registration.PasswordHash))
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("REGISTRATION_PASSWORD_MISSING")
+                .SetMessage("Пароль регистрации отсутствует.")
+                .Build());
+        }
+        
+        var emailExists = await dataContext.UserCredentials
+            .AnyAsync(x => x.Email == registration.Email, cancellationToken);
+    
+        if (emailExists)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_ALREADY_REGISTERED")
+                .SetMessage("Пользователь с таким адресом электронной почты уже зарегистрирован.")
+                .Build());
+        }
+    
+        var userId = Guid.NewGuid();
+    
+        var credential = new UserCredential
+        {
+            UserId = userId,
+            Email = registration.Email!,
+            PasswordHash = registration.PasswordHash
+        };
+    
+        dataContext.UserCredentials.Add(credential);
+        
+        var consents = await dataContext.UserConsents
+            .Where(x => x.RegistrationSessionId == registration.Id)
+            .ToListAsync(cancellationToken);
+    
+        foreach (var consent in consents)
+        {
+            consent.RegistrationSessionId = null;
+            consent.UserCredentialId = userId;
+        }
+        
+        var (refreshRaw, refreshHash) = tokenService.GenerateRefreshToken();
+        var refreshExpiresAt = now.AddDays(30);
+    
+        dataContext.RefreshTokens.Add(
+            new RefreshToken
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TokenHash = refreshHash,
+                CreatedAtUtc = now,
+                ExpiresAtUtc = refreshExpiresAt,
+                CreatedByIp = ClientIp,
+                UserAgent = UserAgent
+            });
+        
+        var userCreatedMessage =
+            new UserCreatedMessage
+            {
+                UserId = userId,
+                Email = registration.Email!,
+                Name = registration.Name,
+                Surname = registration.Surname
+            };
+    
+        dataContext.OutboxMessages.Add(
+            new OutboxMessage
+            {
+                TopicKey = KafkaTopicKeys.UserCreated,
+                Type = nameof(UserCreatedMessage),
+                Key = userId.ToString("N"),
+                PayloadJson = JsonSerializer.Serialize(userCreatedMessage, KafkaJson.SerializerOptions)
+            });
+        
+        dataContext.RegistrationSessions.Remove(registration);
+        await dataContext.SaveChangesAsync(cancellationToken);
+        
+        RegistrationRequest.DeleteCookie(http.HttpContext!);
+        var (accessToken, accessExpiresAt) = tokenService.GenerateAccessToken(BuildClaims(userId));
+    
+        return new AuthResponse
+        {
+            AccessToken = accessToken,
+            AccessExpiresAtUtc = accessExpiresAt,
+    
+            RefreshToken = refreshRaw,
+            RefreshExpiresAtUtc = refreshExpiresAt
+        };
+    }
+
+    /// <summary>
+    /// Нормализация необязательного строкового значения
+    /// </summary>
+    /// <param name="value">Исходное строковое значение</param>
+    /// <returns>
+    /// Значение без начальных и конечных пробелов либо <see langword="null"/>,
+    /// если исходное значение отсутствует или содержит только пробелы
+    /// </returns>
+    private static string? NormalizeOptional(string? value)
+    {
+        var normalized = value?.Trim();
+
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 
     /// <summary>

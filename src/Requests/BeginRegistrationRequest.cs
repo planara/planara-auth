@@ -20,5 +20,5 @@ public class BeginRegistrationRequest
     /// Согласие на обработку персональных данных
     /// </summary>
     [GraphQLDescription("Согласие на обработку персональных данных")]
-    public required bool PersonalDataConsent { get; init; }
+    public required bool PersonalDataConsent { get; set; }
 }
