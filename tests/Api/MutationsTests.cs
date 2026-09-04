@@ -9,6 +9,7 @@ using Planara.Auth.GraphQL;
 using Planara.Auth.Requests;
 using Planara.Auth.Services;
 using Planara.Common.Kafka;
+using Planara.Common.Kafka.Messages.Auth;
 
 namespace Planara.Auth.Tests.Api;
 
@@ -69,7 +70,6 @@ public class MutationsTests: BaseApiTest
             UserId = Guid.NewGuid(),
             Email = "dup@example.com",
             PasswordHash = "hash",
-            IsConsentGiven = true
         });
         await Context.SaveChangesAsync();
 
@@ -100,7 +100,6 @@ public class MutationsTests: BaseApiTest
             UserId = userId,
             Email = "a@b.com",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Right1!", workFactor: 12),
-            IsConsentGiven = true
         });
         await Context.SaveChangesAsync();
 
@@ -150,7 +149,6 @@ public class MutationsTests: BaseApiTest
             UserId = userId,
             Email = "a@b.com",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Right1!", workFactor: 12),
-            IsConsentGiven = true
         });
         await Context.SaveChangesAsync();
 
@@ -456,7 +454,6 @@ public class MutationsTests: BaseApiTest
             UserId = UserId,
             Email = "delete@planara.local",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Password1!"),
-            IsConsentGiven = true
         });
 
         Context.RefreshTokens.AddRange(
@@ -519,116 +516,6 @@ public class MutationsTests: BaseApiTest
         outbox.TopicKey.Should().Be(KafkaTopicKeys.UserDeleted);
         outbox.Type.Should().Be(nameof(UserDeletedMessage));
         outbox.Key.Should().Be(UserId.ToString("N"));
-    }
-    
-    [Fact]
-    public async Task Register_WhenHttpContextIsNull_SavesNullClientMetadata()
-    {
-        await DbTestUtils.ResetAuthDbAsync(Context);
-
-        var tokenService = Scope.ServiceProvider.GetRequiredService<ITokenService>();
-
-        var mutation = new Mutation(
-            tokenService,
-            new HttpContextAccessor
-            {
-                HttpContext = null
-            });
-
-        await mutation.Register(
-            new RegisterRequest
-            {
-                Email = "null-context@planara.local",
-                Password = "Password1!",
-                Consent = true
-            },
-            Context,
-            CancellationToken.None);
-
-        Context.ChangeTracker.Clear();
-
-        var refreshToken = await Context.RefreshTokens
-            .AsNoTracking()
-            .SingleAsync();
-
-        refreshToken.CreatedByIp.Should().BeNull();
-        refreshToken.UserAgent.Should().BeNull();
-    }
-
-    [Fact]
-    public async Task Register_WhenHttpContextHasClientMetadata_SavesIpAndUserAgent()
-    {
-        await DbTestUtils.ResetAuthDbAsync(Context);
-
-        var httpContext = new DefaultHttpContext();
-
-        httpContext.Connection.RemoteIpAddress = IPAddress.Parse("127.0.0.1");
-        httpContext.Request.Headers.UserAgent = "Planara.Tests";
-
-        var tokenService = Scope.ServiceProvider.GetRequiredService<ITokenService>();
-
-        var mutation = new Mutation(
-            tokenService,
-            new HttpContextAccessor
-            {
-                HttpContext = httpContext
-            });
-
-        await mutation.Register(
-            new RegisterRequest
-            {
-                Email = "metadata@planara.local",
-                Password = "Password1!",
-                Consent = true
-            },
-            Context,
-            CancellationToken.None);
-
-        Context.ChangeTracker.Clear();
-
-        var refreshToken = await Context.RefreshTokens
-            .AsNoTracking()
-            .SingleAsync();
-
-        refreshToken.CreatedByIp.Should().Be("127.0.0.1");
-        refreshToken.UserAgent.Should().Be("Planara.Tests");
-    }
-
-    [Fact]
-    public async Task Register_WhenHttpContextHasNoRemoteIp_SavesNullClientIp()
-    {
-        await DbTestUtils.ResetAuthDbAsync(Context);
-
-        var httpContext = new DefaultHttpContext();
-
-        httpContext.Connection.RemoteIpAddress = null;
-
-        var tokenService = Scope.ServiceProvider.GetRequiredService<ITokenService>();
-
-        var mutation = new Mutation(
-            tokenService,
-            new HttpContextAccessor
-            {
-                HttpContext = httpContext
-            });
-
-        await mutation.Register(
-            new RegisterRequest
-            {
-                Email = "no-ip@planara.local",
-                Password = "Password1!",
-                Consent = true
-            },
-            Context,
-            CancellationToken.None);
-
-        Context.ChangeTracker.Clear();
-
-        var refreshToken = await Context.RefreshTokens
-            .AsNoTracking()
-            .SingleAsync();
-
-        refreshToken.CreatedByIp.Should().BeNull();
     }
     
     [Fact]

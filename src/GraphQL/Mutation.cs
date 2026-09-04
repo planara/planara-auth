@@ -17,6 +17,11 @@ using Planara.Common.Exceptions;
 using Planara.Common.Kafka;
 using Planara.Kafka.Configurations;
 using Planara.Common.Auth.Claims;
+using Planara.Common.Database.Domain;
+using Planara.Common.Enums;
+using Planara.Common.GraphQL.Attributes;
+using Planara.Common.Kafka.Messages.Auth;
+using Planara.Common.Kafka.Messages.Privacy;
 using ClaimTypes = Planara.Common.Auth.Claims.ClaimTypes;
 
 namespace Planara.Auth.GraphQL;
@@ -59,7 +64,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         var (refreshRaw, refreshHash) = tokenService.GenerateRefreshToken();
         var refreshExp = DateTime.UtcNow.AddDays(30);
 
-        await dataContext.RefreshTokens.AddAsync(new RefreshToken
+        dataContext.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.NewGuid(),
             UserId = cred.UserId,
@@ -68,7 +73,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             ExpiresAtUtc = refreshExp,
             CreatedByIp = ClientIp,
             UserAgent = UserAgent
-        }, cancellationToken);
+        });
 
         await dataContext.SaveChangesAsync(cancellationToken);
 
@@ -109,7 +114,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         stored.RevokedAtUtc = DateTime.UtcNow;
         stored.ReplacedByTokenHash = newHash;
 
-        await dataContext.RefreshTokens.AddAsync(new RefreshToken
+        dataContext.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.NewGuid(),
             UserId = stored.UserId,
@@ -118,7 +123,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             ExpiresAtUtc = newExp,
             CreatedByIp = ClientIp,
             UserAgent = UserAgent
-        }, cancellationToken);
+        });
 
         var (access, accessExp) = tokenService.GenerateAccessToken(BuildClaims(stored.UserId));
 
@@ -178,13 +183,13 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
 
         var kafkaMessage = new UserDeletedMessage { UserId = userId };
         
-        await dataContext.OutboxMessages.AddAsync(new OutboxMessage
+        dataContext.OutboxMessages.Add(new OutboxMessage
         {
             TopicKey = KafkaTopicKeys.UserDeleted,
             Type = nameof(UserDeletedMessage),
             Key = userId.ToString("N"),
             PayloadJson = JsonSerializer.Serialize(kafkaMessage, KafkaJson.SerializerOptions)
-        }, cancellationToken);
+        });
 
         dataContext.UserCredentials.Remove(credential);
 
@@ -237,7 +242,6 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         if (pendingRegistration is not null && pendingRegistration.ExpiresAt <= DateTime.UtcNow)
         {
             dataContext.RegistrationSessions.Remove(pendingRegistration);
-
             await dataContext.SaveChangesAsync(cancellationToken);
         }
         
@@ -271,6 +275,8 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         
         // Новая регистрация
         var newSessionToken = registrationCryptoService.GenerateSessionToken();
+        
+        var now = DateTime.UtcNow;
         var expiresAt = DateTimeOffset.UtcNow.AddHours(2);
         
         var registration = new RegistrationSession
@@ -282,18 +288,28 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             ExpiresAt = expiresAt.UtcDateTime
         };
         
-        var consentVersion = await dataContext.ConsentVersions
-            .SingleAsync(x => x.Type == ConsentType.PersonalData && x.IsCurrent, cancellationToken);
-        
-        registration.Consents.Add(new Consent 
+        dataContext.RegistrationSessions.Add(registration);
+
+        var message = new ConsentGrantRequestedMessage
         {
-            ConsentVersionId = consentVersion.Id,
-            GivenAt = DateTime.UtcNow,
+            RequestId = Guid.NewGuid(),
+            RegistrationId = registration.Id,
+            Type = ConsentType.PersonalData,
+            ConsentVersionId = request.ConsentVersionId,
+            GivenAt = now,
+            ExpiresAt = registration.ExpiresAt,
             IpAddress = ClientIp,
             UserAgent = UserAgent
-        });
-
-        await dataContext.RegistrationSessions.AddAsync(registration, cancellationToken);
+        };
+        
+        dataContext.OutboxMessages.Add(
+            new OutboxMessage
+            {
+                TopicKey = KafkaTopicKeys.ConsentGrantRequested,
+                Type = nameof(ConsentGrantRequestedMessage),
+                Key = registration.Id.ToString(),
+                PayloadJson = JsonSerializer.Serialize(message, KafkaJson.SerializerOptions)
+            });
         
         await RegistrationVerification.IssueCodeAsync(registration, dataContext, registrationCryptoService, cancellationToken);
         
@@ -457,6 +473,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
     
     [AllowAnonymous]
     [UseRegistrationStep(RegistrationStep.Personal)]
+    [ConsentRequired(ConsentType.PersonalData)]
     [GraphQLDescription("Завершение регистрации пользователя")]
     public async Task<AuthResponse> CompleteRegistration(
         [GraphQLDescription("Персональные данные пользователя")]
@@ -497,26 +514,47 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         {
             UserId = userId,
             Email = registration.Email!,
+            IsEmailConfirmed = true,
             PasswordHash = registration.PasswordHash
         };
     
         dataContext.UserCredentials.Add(credential);
         
-        var consents = await dataContext.UserConsents
-            .Where(x => x.RegistrationSessionId == registration.Id)
+        var consents = await dataContext.UserConsentProjections
+            .Where(x => x.UserId == registration.Id && x.IsGranted)
             .ToListAsync(cancellationToken);
-    
-        foreach (var consent in consents)
+
+        var consentOutboxMessages = consents.Select(consent =>
         {
-            consent.RegistrationSessionId = null;
-            consent.UserCredentialId = userId;
-        }
+            var consentMessage = new ConsentGrantRequestedMessage
+            {
+                RequestId = Guid.NewGuid(),
+                UserId = userId,
+                Type = consent.Type,
+                ConsentVersionId = consent.ConsentVersionId,
+                GivenAt = consent.GrantedAt,
+                IpAddress = ClientIp,
+                UserAgent = UserAgent
+            };
+
+            return new OutboxMessage
+            {
+                TopicKey = KafkaTopicKeys.ConsentGrantRequested,
+                Type = nameof(ConsentGrantRequestedMessage),
+                Key = userId.ToString("N"),
+                PayloadJson = JsonSerializer.Serialize(
+                    consentMessage,
+                    KafkaJson.SerializerOptions)
+            };
+        });
+
+        dataContext.OutboxMessages.AddRange(consentOutboxMessages);
+        dataContext.UserConsentProjections.RemoveRange(consents);
         
         var (refreshRaw, refreshHash) = tokenService.GenerateRefreshToken();
         var refreshExpiresAt = now.AddDays(30);
     
-        dataContext.RefreshTokens.Add(
-            new RefreshToken
+        dataContext.RefreshTokens.Add(new RefreshToken
             {
                 Id = Guid.NewGuid(),
                 UserId = userId,
@@ -527,8 +565,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
                 UserAgent = UserAgent
             });
         
-        var userCreatedMessage =
-            new UserCreatedMessage
+        var userCreatedMessage = new UserCreatedMessage
             {
                 UserId = userId,
                 Email = registration.Email!,
@@ -536,8 +573,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
                 Surname = registration.Surname
             };
     
-        dataContext.OutboxMessages.Add(
-            new OutboxMessage
+        dataContext.OutboxMessages.Add(new OutboxMessage
             {
                 TopicKey = KafkaTopicKeys.UserCreated,
                 Type = nameof(UserCreatedMessage),
@@ -555,7 +591,6 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         {
             AccessToken = accessToken,
             AccessExpiresAtUtc = accessExpiresAt,
-    
             RefreshToken = refreshRaw,
             RefreshExpiresAtUtc = refreshExpiresAt
         };

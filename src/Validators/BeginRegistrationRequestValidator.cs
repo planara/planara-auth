@@ -15,5 +15,9 @@ public class BeginRegistrationRequestValidator: AbstractValidator<BeginRegistrat
         RuleFor(x => x.PersonalDataConsent)
             .Equal(true)
             .WithMessage("Необходимо дать согласие на обработку персональных данных.");
+        
+        RuleFor(x => x.ConsentVersionId)
+            .NotEmpty()
+            .WithMessage("Необходимо указать версию согласия на обработку персональных данных.");;
     }
 }

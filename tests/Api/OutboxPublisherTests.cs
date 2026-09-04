@@ -2,9 +2,9 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Planara.Auth.Data.Domain;
 using Planara.Auth.Workers;
-using Planara.Common.Kafka;
+using Planara.Common.Database.Domain;
+using Planara.Common.Kafka.Messages.Auth;
 using Planara.Kafka.Configurations;
 
 namespace Planara.Auth.Tests.Api;

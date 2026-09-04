@@ -73,6 +73,4 @@ public class RegistrationSession: BaseEntity
     public string SessionTokenHash { get; set; } = null!;
     
     public RegistrationEmailVerification? EmailVerification { get; set; }
-    
-    public ICollection<Consent> Consents { get; set; } = new List<Consent>();
 }

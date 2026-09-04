@@ -19,12 +19,15 @@ public class UserCredential: BaseEntity
     [EmailAddress]
     [MaxLength(256)]
     public required string Email { get; set; }
+
+    /// <summary>
+    /// Признак подтверждения адреса электронной почты
+    /// </summary>
+    public bool IsEmailConfirmed { get; set; } = false;
     
     /// <summary>
     /// Пароль
     /// </summary>
     [MaxLength(100)]
     public required string PasswordHash { get; set; }
-
-    public ICollection<Consent> Consents { get; set; } = new List<Consent>();
 }

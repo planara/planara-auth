@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using Planara.Auth.Data;
+using Planara.Auth.Data.Domain;
+using Planara.Common.Workers;
 
 namespace Planara.Auth.Workers;
 
@@ -9,9 +10,16 @@ public sealed class RegistrationCleanupWorker(ILogger<RegistrationCleanupWorker>
 
     protected override TimeSpan CheckInterval => TimeSpan.FromMinutes(5);
 
-    protected override async Task<int> CleanupAsync(DataContext dataContext, DateTime now, int batchSize, CancellationToken cancellationToken)
+    protected override async Task<int> CleanupAsync(
+        DbContext dataContext,
+        DateTime now,
+        int batchSize,
+        CancellationToken cancellationToken)
     {
-        var ids = await dataContext.RegistrationSessions
+        var registrationSessions =
+            dataContext.Set<RegistrationSession>();
+
+        var ids = await registrationSessions
             .Where(x => x.ExpiresAt <= now)
             .OrderBy(x => x.ExpiresAt)
             .Select(x => x.Id)
@@ -21,7 +29,7 @@ public sealed class RegistrationCleanupWorker(ILogger<RegistrationCleanupWorker>
         if (ids.Length == 0)
             return 0;
 
-        return await dataContext.RegistrationSessions
+        return await registrationSessions
             .Where(x => ids.Contains(x.Id))
             .ExecuteDeleteAsync(cancellationToken);
     }

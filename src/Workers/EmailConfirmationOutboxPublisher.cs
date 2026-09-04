@@ -1,4 +1,5 @@
-using Planara.Common.Kafka;
+using Planara.Common.Kafka.Messages.Notifications;
+using Planara.Common.Workers;
 using Planara.Kafka.Interfaces;
 
 namespace Planara.Auth.Workers;

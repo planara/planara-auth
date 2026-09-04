@@ -13,6 +13,9 @@ using Planara.Common.GraphQL.Filters;
 using Planara.Common.GraphQL.Fusion;
 using Planara.Common.Host;
 using Planara.Common.Kafka;
+using Planara.Common.Kafka.Messages.Auth;
+using Planara.Common.Kafka.Messages.Notifications;
+using Planara.Common.Kafka.Messages.Privacy;
 using Planara.Common.Validators;
 using Planara.Kafka.Extensions;
 using StackExchange.Redis;
@@ -67,19 +70,25 @@ builder.Services
     .AddKafkaProducer<UserCreatedMessage>(builder.Configuration)
     .AddKafkaProducer<UserDeletedMessage>(builder.Configuration)
     .AddKafkaProducer<EmailConfirmationMessage>(builder.Configuration)
+    .AddKafkaProducer<ConsentGrantRequestedMessage>(builder.Configuration)
+    .AddKafkaConsumer<ConsentGrantedMessage>(builder.Configuration)
     .AddKafkaTopicsInitializer(builder.Configuration);
 
 // Services
-builder.Services.AddScoped<ITokenService, TokenService>();
-builder.Services.AddSingleton<IRegistrationCryptoService, RegistrationCryptoService>();
+builder.Services
+    .AddScoped<ITokenService, TokenService>()
+    .AddSingleton<IRegistrationCryptoService, RegistrationCryptoService>();
 
 // Hosted
-builder.Services.AddHostedService<UserCreatedOutboxPublisher>();
-builder.Services.AddHostedService<UserDeletedOutboxPublisher>();
-builder.Services.AddHostedService<EmailConfirmationOutboxPublisher>();
-builder.Services.AddHostedService<RegistrationCleanupWorker>();
-builder.Services.AddHostedService<RefreshTokenCleanupWorker>();
-builder.Services.AddHostedService<OutboxCleanupWorker>();
+builder.Services
+    .AddHostedService<UserCreatedOutboxPublisher>()
+    .AddHostedService<UserDeletedOutboxPublisher>()
+    .AddHostedService<EmailConfirmationOutboxPublisher>()
+    .AddHostedService<ConsentGrantRequestedOutboxPublisher>()
+    .AddHostedService<ConsentGrantedKafkaConsumerWorker>()
+    .AddHostedService<RegistrationCleanupWorker>()
+    .AddHostedService<RefreshTokenCleanupWorker>()
+    .AddHostedService<OutboxCleanupWorker>();
 
 var app = builder.Build();
 

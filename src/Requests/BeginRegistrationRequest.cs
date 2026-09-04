@@ -21,4 +21,10 @@ public class BeginRegistrationRequest
     /// </summary>
     [GraphQLDescription("Согласие на обработку персональных данных")]
     public required bool PersonalDataConsent { get; set; }
+    
+    /// <summary>
+    /// ID версии согласия на обработку персональных данных
+    /// </summary>
+    [GraphQLDescription("ID версии согласия на обработку персональных данных")]
+    public required Guid ConsentVersionId { get; set; }
 }

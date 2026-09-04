@@ -2,7 +2,9 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Planara.Auth.Data;
 using Planara.Auth.Data.Domain;
+using Planara.Common.Database.Domain;
 using Planara.Common.Kafka;
+using Planara.Common.Kafka.Messages.Notifications;
 using Planara.Kafka.Configurations;
 
 namespace Planara.Auth.Services;
@@ -50,7 +52,7 @@ public static class RegistrationVerification
             verification.ResendAvailableAt = now.AddSeconds(10);
         }
 
-        var message = new EmailConfirmationMessage { Email = registration.Email!, Code = code };
+        var message = new EmailConfirmationMessage { Id = Guid.NewGuid(), Email = registration.Email!, Code = code };
 
         await dataContext.OutboxMessages.AddAsync(
             new OutboxMessage

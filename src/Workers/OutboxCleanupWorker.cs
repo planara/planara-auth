@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using Planara.Auth.Data;
+using Planara.Common.Database.Domain;
+using Planara.Common.Workers;
 
 namespace Planara.Auth.Workers;
 
@@ -11,11 +12,17 @@ public sealed class OutboxCleanupWorker(ILogger<OutboxCleanupWorker> logger, ISe
 
     protected override TimeSpan CheckInterval => TimeSpan.FromMinutes(30);
 
-    protected override async Task<int> CleanupAsync(DataContext dataContext, DateTime now, int batchSize, CancellationToken cancellationToken)
+    protected override async Task<int> CleanupAsync(
+        DbContext dataContext,
+        DateTime now,
+        int batchSize,
+        CancellationToken cancellationToken)
     {
         var retentionDate = now.AddDays(-7);
 
-        var ids = await dataContext.OutboxMessages
+        var outboxMessages = dataContext.Set<OutboxMessage>();
+
+        var ids = await outboxMessages
             .Where(x => x.ProcessedAt != null && x.ProcessedAt <= retentionDate)
             .OrderBy(x => x.ProcessedAt)
             .Select(x => x.Id)
@@ -25,7 +32,7 @@ public sealed class OutboxCleanupWorker(ILogger<OutboxCleanupWorker> logger, ISe
         if (ids.Length == 0)
             return 0;
 
-        return await dataContext.OutboxMessages
+        return await outboxMessages
             .Where(x => ids.Contains(x.Id))
             .ExecuteDeleteAsync(cancellationToken);
     }
