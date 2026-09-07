@@ -13,6 +13,7 @@ public class DataContext(DbContextOptions options) : DbContext(options)
     public DbSet<RegistrationSession> RegistrationSessions { get; set; } = null!;
     public DbSet<RegistrationEmailVerification> RegistrationEmailVerifications { get; set; } = null!;
     public DbSet<UserConsentProjection> UserConsentProjections { get; set; } = null!;
+    public DbSet<UserEmailVerification> UserEmailVerifications { get; set; } = null!;
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,9 +45,7 @@ public class DataContext(DbContextOptions options) : DbContext(options)
         modelBuilder.Entity<RegistrationSession>()
             .HasOne(x => x.EmailVerification)
             .WithOne(x => x.RegistrationSession)
-            .HasForeignKey<RegistrationEmailVerification>(
-                x => x.RegistrationSessionId
-            )
+            .HasForeignKey<RegistrationEmailVerification>(x => x.RegistrationSessionId)
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<RefreshToken>()
@@ -55,5 +54,15 @@ public class DataContext(DbContextOptions options) : DbContext(options)
 
         modelBuilder.Entity<RefreshToken>()
             .HasIndex(x => x.UserId);
+        
+        modelBuilder.Entity<UserEmailVerification>()
+            .HasOne(x => x.UserCredential)
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<UserEmailVerification>()
+            .HasIndex(x => new { x.UserId, x.Type })
+            .IsUnique();
     }
 }

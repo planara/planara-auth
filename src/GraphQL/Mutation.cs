@@ -21,6 +21,7 @@ using Planara.Common.Database.Domain;
 using Planara.Common.Enums;
 using Planara.Common.GraphQL.Attributes;
 using Planara.Common.Kafka.Messages.Auth;
+using Planara.Common.Kafka.Messages.Notifications;
 using Planara.Common.Kafka.Messages.Privacy;
 using ClaimTypes = Planara.Common.Auth.Claims.ClaimTypes;
 
@@ -594,6 +595,461 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             RefreshToken = refreshRaw,
             RefreshExpiresAtUtc = refreshExpiresAt
         };
+    }
+    
+    [Authorize]
+    [GraphQLDescription("Изменение пароля текущего пользователя")]
+    public async Task<bool> ChangePassword(
+        [GraphQLDescription("Данные для изменения пароля")]
+        [UseFluentValidation, UseValidator<ChangePasswordRequestValidator>]
+        ChangePasswordRequest request,
+        ClaimsPrincipal user,
+        [Service] DataContext dataContext,
+        CancellationToken cancellationToken)
+    {
+        var userId = user.GetUserId();
+
+        var credential = await dataContext.UserCredentials
+            .SingleAsync(x => x.UserId == userId, cancellationToken);
+
+        if (!BCrypt.Net.BCrypt.Verify(request.CurrentPassword, credential.PasswordHash))
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("INVALID_CURRENT_PASSWORD")
+                .SetMessage("Текущий пароль указан неверно.")
+                .Build());
+        }
+
+        if (BCrypt.Net.BCrypt.Verify(request.NewPassword, credential.PasswordHash))
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("PASSWORD_NOT_CHANGED")
+                .SetMessage("Новый пароль должен отличаться от текущего.")
+                .Build());
+        }
+
+        credential.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword, workFactor: 12);
+
+        await dataContext.SaveChangesAsync(cancellationToken);
+
+        return true;
+    }
+    
+    [Authorize]
+    [GraphQLDescription("Начало изменения адреса электронной почты")]
+    public async Task<bool> ChangeEmail(
+        [GraphQLDescription("Новый адрес электронной почты")]
+        [UseFluentValidation, UseValidator<ChangeEmailRequestValidator>]
+        ChangeEmailRequest request,
+        ClaimsPrincipal user,
+        [Service] DataContext dataContext,
+        [Service] IRegistrationCryptoService registrationCryptoService,
+        CancellationToken cancellationToken)
+    {
+        var userId = user.GetUserId();
+        var email = request.Email.Trim().ToLowerInvariant();
+        var now = DateTime.UtcNow;
+    
+        var credential = await dataContext.UserCredentials
+            .SingleAsync(x => x.UserId == userId, cancellationToken);
+    
+        if (string.Equals(credential.Email, email, StringComparison.Ordinal))
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_NOT_CHANGED")
+                .SetMessage("Новый адрес электронной почты совпадает с текущим.")
+                .Build());
+        }
+    
+        var emailExists = await dataContext.UserCredentials
+            .AnyAsync(x => x.Email == email && x.UserId != userId, cancellationToken);
+    
+        if (emailExists)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_ALREADY_REGISTERED")
+                .SetMessage("Пользователь с таким адресом электронной почты уже зарегистрирован.")
+                .Build());
+        }
+    
+        var code = registrationCryptoService.GenerateCode();
+    
+        var verification = await dataContext.UserEmailVerifications
+            .SingleOrDefaultAsync(x => x.UserId == userId && x.Type == EmailVerificationType.EmailChange, cancellationToken);
+    
+        if (verification is null)
+        {
+            verification = new UserEmailVerification
+            {
+                UserId = userId,
+                Type = EmailVerificationType.EmailChange,
+                Email = email,
+                CodeHash = registrationCryptoService.HashCode(code),
+                Attempts = 0,
+                ExpiresAt = now.AddMinutes(15),
+                ResendAvailableAt = now.AddMinutes(1)
+            };
+
+            dataContext.UserEmailVerifications.Add(verification);
+        }
+        else
+        {
+            verification.Email = email;
+            verification.CodeHash = registrationCryptoService.HashCode(code);
+            verification.Attempts = 0;
+            verification.ExpiresAt = now.AddMinutes(15);
+            verification.ResendAvailableAt = now.AddMinutes(1);
+        }
+    
+        var message = new EmailConfirmationMessage
+        {
+            Id = Guid.NewGuid(),
+            Email = email,
+            Code = code
+        };
+    
+        dataContext.OutboxMessages.Add(new OutboxMessage
+        {
+            TopicKey = KafkaTopicKeys.EmailConfirmation,
+            Type = nameof(EmailConfirmationMessage),
+            Key = userId.ToString("N"),
+            PayloadJson = JsonSerializer.Serialize(message, KafkaJson.SerializerOptions)
+        });
+    
+        await dataContext.SaveChangesAsync(cancellationToken);
+    
+        return true;
+    }
+    
+    [Authorize]
+    [GraphQLDescription("Подтверждение изменения адреса электронной почты")]
+    public async Task<bool> ConfirmEmailChange(
+        [GraphQLDescription("Код подтверждения")]
+        [UseFluentValidation, UseValidator<ConfirmEmailChangeRequestValidator>]
+        ConfirmEmailChangeRequest request,
+        ClaimsPrincipal user,
+        [Service] DataContext dataContext,
+        [Service] IRegistrationCryptoService registrationCryptoService,
+        CancellationToken cancellationToken)
+    {
+        var userId = user.GetUserId();
+        var now = DateTime.UtcNow;
+    
+        var verification = await dataContext.UserEmailVerifications
+            .SingleOrDefaultAsync(
+                x => x.UserId == userId && x.Type == EmailVerificationType.EmailChange,
+                cancellationToken);
+    
+        if (verification is null)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_CHANGE_NOT_FOUND")
+                .SetMessage("Запрос на изменение адреса электронной почты отсутствует.")
+                .Build());
+        }
+
+        if (verification.ExpiresAt <= now)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_CHANGE_CODE_EXPIRED")
+                .SetMessage("Срок действия кода подтверждения истёк.")
+                .Build());
+        }
+
+        if (verification.Attempts >= RegistrationVerification.MaxAttempts)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_CHANGE_CODE_ATTEMPTS_EXCEEDED")
+                .SetMessage("Превышено количество попыток ввода кода.")
+                .Build());
+        }
+    
+        if (!registrationCryptoService.VerifyCode(request.Code, verification.CodeHash))
+        {
+            verification.Attempts++;
+    
+            await dataContext.SaveChangesAsync(cancellationToken);
+    
+            var attemptsLeft = Math.Max(0, RegistrationVerification.MaxAttempts - verification.Attempts);
+    
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode(attemptsLeft == 0 ? "EMAIL_CHANGE_CODE_ATTEMPTS_EXCEEDED" : "EMAIL_CHANGE_CODE_INVALID")
+                .SetMessage(attemptsLeft == 0 ? "Превышено количество попыток ввода кода." : "Неверный код подтверждения.")
+                .SetExtension("attemptsLeft", attemptsLeft)
+                .Build());
+        }
+    
+        var emailExists = await dataContext.UserCredentials
+            .AnyAsync(x => x.Email == verification.Email && x.UserId != userId, cancellationToken);
+    
+        if (emailExists)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_ALREADY_REGISTERED")
+                .SetMessage("Пользователь с таким адресом электронной почты уже зарегистрирован.")
+                .Build());
+        }
+    
+        var credential = await dataContext.UserCredentials
+            .SingleAsync(x => x.UserId == userId, cancellationToken);
+    
+        credential.Email = verification.Email;
+        credential.IsEmailConfirmed = true;
+    
+        dataContext.UserEmailVerifications.Remove(verification);
+    
+        await dataContext.SaveChangesAsync(cancellationToken);
+    
+        return true;
+    }
+    
+    [AllowAnonymous]
+    [UseRegistrationStep(RegistrationStep.Code)]
+    [GraphQLDescription("Изменение адреса электронной почты во время регистрации")]
+    public async Task<RegistrationFlowResponse> ChangeRegistrationEmail(
+        [GraphQLDescription("Новый адрес электронной почты")]
+        [UseFluentValidation, UseValidator<ChangeRegistrationEmailRequestValidator>]
+        ChangeRegistrationEmailRequest request,
+        [GlobalState(RegistrationRequest.ContextKey)] RegistrationRequestContext registrationContext,
+        [LocalState(RegistrationRequest.SessionKey)] RegistrationSession registration,
+        [Service] DataContext dataContext,
+        [Service] IRegistrationCryptoService registrationCryptoService,
+        CancellationToken cancellationToken)
+    {
+        var email = request.Email.Trim().ToLowerInvariant();
+    
+        if (string.Equals(registration.Email, email, StringComparison.Ordinal))
+        {
+            return new RegistrationFlowResponse
+            {
+                SessionToken = registrationContext.SessionToken!,
+                Step = registration.CurrentStep,
+                NextStep = registration.NextStep
+            };
+        }
+    
+        var registeredUserExists = await dataContext.UserCredentials
+            .AnyAsync(x => x.Email == email, cancellationToken);
+    
+        if (registeredUserExists)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_ALREADY_REGISTERED")
+                .SetMessage("Пользователь с таким адресом электронной почты уже зарегистрирован.")
+                .Build());
+        }
+    
+        var pendingRegistrationExists = await dataContext.RegistrationSessions
+            .AnyAsync(x =>
+                x.Email == email &&
+                x.Id != registration.Id &&
+                x.ExpiresAt > DateTime.UtcNow,
+                cancellationToken);
+    
+        if (pendingRegistrationExists)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("REGISTRATION_EMAIL_ALREADY_IN_USE")
+                .SetMessage("С этим адресом электронной почты уже выполняется регистрация.")
+                .Build());
+        }
+    
+        registration.Email = email;
+    
+        await RegistrationVerification.IssueCodeAsync(
+            registration,
+            dataContext,
+            registrationCryptoService,
+            cancellationToken);
+    
+        await dataContext.SaveChangesAsync(cancellationToken);
+    
+        return new RegistrationFlowResponse
+        {
+            SessionToken = registrationContext.SessionToken!,
+            Step = registration.CurrentStep,
+            NextStep = registration.NextStep
+        };
+    }
+    
+    [Authorize]
+    [GraphQLDescription("Отправка кода подтверждения текущего адреса электронной почты")]
+    public async Task<bool> RequestEmailConfirmation(
+        ClaimsPrincipal user,
+        [Service] DataContext dataContext,
+        [Service] IRegistrationCryptoService registrationCryptoService,
+        CancellationToken cancellationToken)
+    {
+        var userId = user.GetUserId();
+        var now = DateTime.UtcNow;
+    
+        var credential = await dataContext.UserCredentials
+            .SingleAsync(x => x.UserId == userId, cancellationToken);
+    
+        if (credential.IsEmailConfirmed)
+            return true;
+    
+        var verification = await dataContext.UserEmailVerifications
+            .SingleOrDefaultAsync(
+                x => x.UserId == userId &&
+                     x.Type == EmailVerificationType.EmailConfirmation,
+                cancellationToken);
+    
+        if (verification is not null &&
+            verification.ResendAvailableAt > now)
+        {
+            var retryAfter = Math.Max(
+                1,
+                (int)Math.Ceiling(
+                    (verification.ResendAvailableAt - now).TotalSeconds));
+    
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_CONFIRMATION_RESEND_COOLDOWN")
+                .SetMessage("Код уже был недавно отправлен.")
+                .SetExtension("retryAfter", retryAfter)
+                .Build());
+        }
+    
+        var code = registrationCryptoService.GenerateCode();
+    
+        if (verification is null)
+        {
+            verification = new UserEmailVerification
+            {
+                UserId = userId,
+                Type = EmailVerificationType.EmailConfirmation,
+                Email = credential.Email,
+                CodeHash = registrationCryptoService.HashCode(code),
+                Attempts = 0,
+                ExpiresAt = now.AddMinutes(15),
+                ResendAvailableAt = now.AddMinutes(1)
+            };
+    
+            dataContext.UserEmailVerifications.Add(verification);
+        }
+        else
+        {
+            verification.Email = credential.Email;
+            verification.CodeHash = registrationCryptoService.HashCode(code);
+            verification.Attempts = 0;
+            verification.ExpiresAt = now.AddMinutes(15);
+            verification.ResendAvailableAt = now.AddMinutes(1);
+        }
+    
+        var message = new EmailConfirmationMessage
+        {
+            Id = Guid.NewGuid(),
+            Email = credential.Email,
+            Code = code
+        };
+    
+        dataContext.OutboxMessages.Add(new OutboxMessage
+        {
+            TopicKey = KafkaTopicKeys.EmailConfirmation,
+            Type = nameof(EmailConfirmationMessage),
+            Key = userId.ToString("N"),
+            PayloadJson = JsonSerializer.Serialize(
+                message,
+                KafkaJson.SerializerOptions)
+        });
+    
+        await dataContext.SaveChangesAsync(cancellationToken);
+    
+        return true;
+    }
+    
+    [Authorize]
+    [GraphQLDescription("Подтверждение текущего адреса электронной почты")]
+    public async Task<bool> ConfirmEmail(
+        [GraphQLDescription("Код подтверждения")]
+        [UseFluentValidation, UseValidator<ConfirmEmailRequestValidator>]
+        ConfirmEmailRequest request,
+        ClaimsPrincipal user,
+        [Service] DataContext dataContext,
+        [Service] IRegistrationCryptoService registrationCryptoService,
+        CancellationToken cancellationToken)
+    {
+        var userId = user.GetUserId();
+        var now = DateTime.UtcNow;
+    
+        var credential = await dataContext.UserCredentials
+            .SingleAsync(x => x.UserId == userId, cancellationToken);
+    
+        if (credential.IsEmailConfirmed)
+            return true;
+    
+        var verification = await dataContext.UserEmailVerifications
+            .SingleOrDefaultAsync(
+                x => x.UserId == userId &&
+                     x.Type == EmailVerificationType.EmailConfirmation,
+                cancellationToken);
+    
+        if (verification is null)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_CONFIRMATION_NOT_FOUND")
+                .SetMessage("Код подтверждения отсутствует.")
+                .Build());
+        }
+    
+        if (verification.ExpiresAt <= now)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_CONFIRMATION_CODE_EXPIRED")
+                .SetMessage("Срок действия кода подтверждения истёк.")
+                .Build());
+        }
+    
+        if (verification.Attempts >= RegistrationVerification.MaxAttempts)
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_CONFIRMATION_CODE_ATTEMPTS_EXCEEDED")
+                .SetMessage("Превышено количество попыток ввода кода.")
+                .Build());
+        }
+    
+        if (!registrationCryptoService.VerifyCode(
+                request.Code,
+                verification.CodeHash))
+        {
+            verification.Attempts++;
+    
+            await dataContext.SaveChangesAsync(cancellationToken);
+    
+            var attemptsLeft = Math.Max(
+                0,
+                RegistrationVerification.MaxAttempts - verification.Attempts);
+    
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode(attemptsLeft == 0
+                    ? "EMAIL_CONFIRMATION_CODE_ATTEMPTS_EXCEEDED"
+                    : "EMAIL_CONFIRMATION_CODE_INVALID")
+                .SetMessage(attemptsLeft == 0
+                    ? "Превышено количество попыток ввода кода."
+                    : "Неверный код подтверждения.")
+                .SetExtension("attemptsLeft", attemptsLeft)
+                .Build());
+        }
+    
+        // За время между отправкой и подтверждением почта не должна была измениться
+        if (!string.Equals(
+                credential.Email,
+                verification.Email,
+                StringComparison.Ordinal))
+        {
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("EMAIL_CONFIRMATION_EMAIL_CHANGED")
+                .SetMessage("Адрес электронной почты был изменён. Запросите новый код подтверждения.")
+                .Build());
+        }
+    
+        credential.IsEmailConfirmed = true;
+    
+        dataContext.UserEmailVerifications.Remove(verification);
+    
+        await dataContext.SaveChangesAsync(cancellationToken);
+    
+        return true;
     }
 
     /// <summary>
