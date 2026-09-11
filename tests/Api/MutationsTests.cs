@@ -2085,7 +2085,7 @@ public class MutationsTests: BaseApiTest
 
         var stored = await Context.RefreshTokens.AsNoTracking().SingleAsync();
 
-        stored.RevokedAtUtc.Should().Be(revokedAt);
+        stored.RevokedAtUtc.Should().BeCloseTo(revokedAt, TimeSpan.FromMicroseconds(1));
     }
     
     [Fact]

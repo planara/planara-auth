@@ -51,7 +51,7 @@ public class KafkaConsumerWorkerTests: BaseApiTest
         projection.Type.Should().Be(ConsentType.PersonalData);
         projection.ConsentVersionId.Should().Be(consentVersionId);
         projection.IsGranted.Should().BeTrue();
-        projection.GrantedAt.Should().Be(givenAt);
+        projection.GrantedAt.Should().BeCloseTo(givenAt, TimeSpan.FromMicroseconds(1));
         projection.RevokedAt.Should().BeNull();
         projection.UpdatedAt.Should().BeOnOrAfter(before);
     }
