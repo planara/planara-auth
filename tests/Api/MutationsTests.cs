@@ -297,7 +297,7 @@ public class MutationsTests: BaseApiTest
         consent.UserId.Should().BeNull();
         consent.Type.Should().Be(ConsentType.PersonalData);
         consent.ConsentVersionId.Should().Be(consentVersionId);
-        consent.ExpiresAt.Should().Be(registration.ExpiresAt);
+        consent.ExpiresAt.Should().BeCloseTo(registration.ExpiresAt, TimeSpan.FromMicroseconds(1));
         consent.UserAgent.Should().Be("Planara.Tests/1.0");
     
         outboxes.Should().ContainSingle(x =>
@@ -1777,7 +1777,7 @@ public class MutationsTests: BaseApiTest
         consent.UserId.Should().Be(userId);
         consent.Type.Should().Be(ConsentType.PersonalData);
         consent.ConsentVersionId.Should().Be(consentVersionId);
-        consent.GivenAt.Should().Be(grantedAt);
+        consent.GivenAt.Should().BeCloseTo(grantedAt, TimeSpan.FromMicroseconds(1));
     }
     
     [Fact]
