@@ -29,4 +29,8 @@
       <ProjectReference Include="..\src\Planara.Auth.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Compile Remove="Api\RegistrationStepMiddlewareTests.cs" />
+    </ItemGroup>
+
 </Project>

@@ -13,6 +13,9 @@ using Planara.Common.GraphQL.Filters;
 using Planara.Common.GraphQL.Fusion;
 using Planara.Common.Host;
 using Planara.Common.Kafka;
+using Planara.Common.Kafka.Messages.Auth;
+using Planara.Common.Kafka.Messages.Notifications;
+using Planara.Common.Kafka.Messages.Privacy;
 using Planara.Common.Validators;
 using Planara.Kafka.Extensions;
 using StackExchange.Redis;
@@ -27,6 +30,7 @@ builder.Services
     // .AddCors()
     .AddLogging();
 
+// GraphQL
 builder.Services
     .AddRouting()
     .AddGraphQLServer()
@@ -51,23 +55,40 @@ builder.Services
         builder.Configuration.GetValue<string>("GraphQL:Name")!,
         WellKnownSchema.Auth
     )
+    .AddHttpRequestInterceptor<RegistrationHttpRequestInterceptor>()
     .InitializeOnStartup();
 
+// Database
 builder.Services.AddDataContext<DataContext>(
     builder.Configuration.GetValue<string>("DbConnections:Postgres:ConnectionString")!,
     builder.Configuration.GetValue<int>("DbConnections:Postgres:MaxRetry"),
     builder.Configuration.GetValue<int>("DbConnections:Postgres:MaxDelaySec")
 );
 
+// Kafka
 builder.Services
     .AddKafkaProducer<UserCreatedMessage>(builder.Configuration)
     .AddKafkaProducer<UserDeletedMessage>(builder.Configuration)
+    .AddKafkaProducer<EmailConfirmationMessage>(builder.Configuration)
+    .AddKafkaProducer<ConsentGrantRequestedMessage>(builder.Configuration)
+    .AddKafkaConsumer<ConsentGrantedMessage>(builder.Configuration)
     .AddKafkaTopicsInitializer(builder.Configuration);
 
-builder.Services.AddScoped<ITokenService, TokenService>();
+// Services
+builder.Services
+    .AddScoped<ITokenService, TokenService>()
+    .AddSingleton<IRegistrationCryptoService, RegistrationCryptoService>();
 
-builder.Services.AddHostedService<UserCreatedOutboxPublisher>();
-builder.Services.AddHostedService<UserDeletedOutboxPublisher>();
+// Hosted
+builder.Services
+    .AddHostedService<UserCreatedOutboxPublisher>()
+    .AddHostedService<UserDeletedOutboxPublisher>()
+    .AddHostedService<EmailConfirmationOutboxPublisher>()
+    .AddHostedService<ConsentGrantRequestedOutboxPublisher>()
+    .AddHostedService<ConsentGrantedKafkaConsumerWorker>()
+    .AddHostedService<RegistrationCleanupWorker>()
+    .AddHostedService<RefreshTokenCleanupWorker>()
+    .AddHostedService<OutboxCleanupWorker>();
 
 var app = builder.Build();
 

@@ -75,6 +75,15 @@ spec:
               
             - name: Kafka__ProducerTopics__UserDeleted
               value: "UserDeleted"
+              
+            - name: Kafka__ProducerTopics__EmailConfirmation
+              value: "EmailConfirmation"
+              
+            - name: Registration__CryptoSecret
+              valueFrom:
+                secretKeyRef:
+                  name: planara-common-secrets
+                  key: Registration__CryptoSecret
 
             - name: GraphQL__Name
               value: "GraphQLSchema"

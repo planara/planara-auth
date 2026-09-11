@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Planara.Auth.Registration;
 
 namespace Planara.Auth.Services;
 
@@ -31,6 +32,10 @@ public interface ITokenService
     /// </list>
     /// </returns>
     (string refreshToken, string refreshTokenHash) GenerateRefreshToken();
+    
+    string GenerateRegistrationToken(Guid registrationId, RegistrationAuthLevel authLevel, DateTime expiresAtUtc);
+    
+    ClaimsPrincipal? ValidateRegistrationToken(string token);
     
     /// <summary>
     /// Вычисляет хэш refresh token для последующего сравнения и поиска в базе данных
