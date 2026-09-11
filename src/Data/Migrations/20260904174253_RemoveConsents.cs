@@ -55,7 +55,7 @@ namespace Planara.Auth.Data.Migrations
                         'ExpiresAt', NULL,
                         'IpAddress', c."IpAddress",
                         'UserAgent', c."UserAgent"
-                    )::text,
+                    )::jsonb,
                     NOW(),
                     NOW()
                 FROM consents c;

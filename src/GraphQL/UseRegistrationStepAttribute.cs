@@ -41,7 +41,7 @@ public class UseRegistrationStepAttribute : ObjectFieldDescriptorAttribute
                     throw new GraphQLException(ErrorBuilder.New()
                         .SetCode("REGISTRATION_STEP_NOT_AVAILABLE")
                         .SetMessage("Этот шаг регистрации сейчас недоступен.")
-                        .SetExtension("nextStep", registrationContext.RequiredStep?.ToString())
+                        .SetExtension("nextStep", registrationContext.RequiredStep!.Value.ToString())
                         .Build());
                 }
 

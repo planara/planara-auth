@@ -24,6 +24,19 @@ public static class RegistrationRequest
                 Expires = new DateTimeOffset(DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc))
             });
     }
+    
+    public static void SetRegistrationCookie(HttpContext context, DateTime expiresAtUtc)
+    {
+        context.Response.Cookies.Append(FlowHeader, "1",
+            new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Lax,
+                Path = "/",
+                Expires = new DateTimeOffset(DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc))
+            });
+    }
 
     public static void DeleteCookie(HttpContext context)
     {

@@ -9,8 +9,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Planara.Auth.Data;
 using Planara.Auth.Workers;
-using Planara.Common.Kafka;
 using Planara.Common.Kafka.Messages.Auth;
+using Planara.Common.Kafka.Messages.Notifications;
+using Planara.Common.Kafka.Messages.Privacy;
 using Planara.Kafka.Interfaces;
 using StackExchange.Redis;
 using Testcontainers.PostgreSql;
@@ -37,13 +38,20 @@ public class ApiTestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifeti
             services.RemoveAll(typeof(DbContextOptions<DataContext>));
             services.RemoveAll(typeof(DataContext));
             services.RemoveAll(typeof(IConnectionMultiplexer));
-
+            
             services.RemoveAll<IKafkaProducer<UserCreatedMessage>>();
             services.RemoveAll<IKafkaProducer<UserDeletedMessage>>();
-            services.RemoveAll<IHostedService>();
+            services.RemoveAll<IKafkaProducer<EmailConfirmationMessage>>();
+            services.RemoveAll<IKafkaProducer<ConsentGrantRequestedMessage>>();
 
+            services.RemoveAll<IKafkaConsumer<ConsentGrantedMessage>>();
+
+            services.RemoveAll<IHostedService>();
+            
             services.AddSingleton<FakeKafkaProducer<UserCreatedMessage>>();
             services.AddSingleton<FakeKafkaProducer<UserDeletedMessage>>();
+            services.AddSingleton<FakeKafkaProducer<EmailConfirmationMessage>>();
+            services.AddSingleton<FakeKafkaProducer<ConsentGrantRequestedMessage>>();
 
             services.AddSingleton<IKafkaProducer<UserCreatedMessage>>(sp =>
                 sp.GetRequiredService<FakeKafkaProducer<UserCreatedMessage>>());
@@ -51,8 +59,22 @@ public class ApiTestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifeti
             services.AddSingleton<IKafkaProducer<UserDeletedMessage>>(sp =>
                 sp.GetRequiredService<FakeKafkaProducer<UserDeletedMessage>>());
 
+            services.AddSingleton<IKafkaProducer<EmailConfirmationMessage>>(sp =>
+                sp.GetRequiredService<FakeKafkaProducer<EmailConfirmationMessage>>());
+
+            services.AddSingleton<IKafkaProducer<ConsentGrantRequestedMessage>>(sp =>
+                sp.GetRequiredService<FakeKafkaProducer<ConsentGrantRequestedMessage>>());
+            
+            services.AddSingleton<FakeKafkaConsumer<ConsentGrantedMessage>>();
+
+            services.AddSingleton<IKafkaConsumer<ConsentGrantedMessage>>(sp =>
+                sp.GetRequiredService<FakeKafkaConsumer<ConsentGrantedMessage>>());
+            
             services.AddScoped<UserCreatedOutboxPublisher>();
             services.AddScoped<UserDeletedOutboxPublisher>();
+            services.AddScoped<EmailConfirmationOutboxPublisher>();
+            services.AddScoped<ConsentGrantRequestedOutboxPublisher>();
+            services.AddScoped<ConsentGrantedKafkaConsumerWorker>();
 
             services.AddDbContext<DataContext>(opt =>
                 opt.UseNpgsql(_postgres.GetConnectionString()));
@@ -64,9 +86,7 @@ public class ApiTestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifeti
                     options.DefaultAuthenticateScheme = TestAuthHandler.AuthenticationScheme;
                     options.DefaultChallengeScheme = TestAuthHandler.AuthenticationScheme;
                 })
-                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                    TestAuthHandler.AuthenticationScheme,
-                    _ => { });
+                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.AuthenticationScheme, _ => { });
 
             services.PostConfigure<AuthenticationOptions>(options =>
             {
@@ -80,12 +100,8 @@ public class ApiTestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifeti
         {
             config.AddInMemoryCollection(new[]
             {
-                new KeyValuePair<string, string>(
-                    "DbConnections:Redis:ConnectionString",
-                    _redis.GetConnectionString()!),
-                new KeyValuePair<string, string>(
-                    "GraphQL:Name",
-                    "test-auth-schema")
+                new KeyValuePair<string, string>("DbConnections:Redis:ConnectionString", _redis.GetConnectionString()!),
+                new KeyValuePair<string, string>("GraphQL:Name", "test-auth-schema")
             }!);
         });
     }

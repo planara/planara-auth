@@ -34,7 +34,7 @@ public static class RegistrationStateMachine
         registration.NextStep = GetNext(step);
     }
 
-    private static RegistrationStep GetNext(RegistrationStep step) =>
+    public static RegistrationStep GetNext(RegistrationStep step) =>
         step switch
         {
             RegistrationStep.Code => RegistrationStep.Password,

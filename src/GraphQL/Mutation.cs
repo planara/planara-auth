@@ -264,7 +264,9 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             var registrationJwt = tokenService
                 .GenerateRegistrationToken(existingRegistration.Id, RegistrationAuthLevel.Challenge, existingRegistration.ExpiresAt);
 
+            // Cookie
             RegistrationRequest.SetCookie(http.HttpContext!, registrationJwt, existingRegistration.ExpiresAt);
+            RegistrationRequest.SetRegistrationCookie(http.HttpContext!, existingRegistration.ExpiresAt);
 
             return new RegistrationFlowResponse
             {
@@ -319,7 +321,9 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         var newRegistrationJwt = tokenService.GenerateRegistrationToken(
             registration.Id, RegistrationAuthLevel.Challenge, registration.ExpiresAt);
 
+        // Cookie
         RegistrationRequest.SetCookie(http.HttpContext!, newRegistrationJwt, registration.ExpiresAt);
+        RegistrationRequest.SetRegistrationCookie(http.HttpContext!, registration.ExpiresAt);
         
         return new RegistrationFlowResponse
         {
@@ -399,7 +403,9 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         
         var authorizedJwt = tokenService.GenerateRegistrationToken(registration!.Id, RegistrationAuthLevel.Authorized, registration.ExpiresAt);
     
+        // Cookie
         RegistrationRequest.SetCookie(http.HttpContext!, authorizedJwt, registration.ExpiresAt);
+        RegistrationRequest.SetRegistrationCookie(http.HttpContext!, registration.ExpiresAt);
     
         return new RegistrationFlowResponse
         {
@@ -543,9 +549,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
                 TopicKey = KafkaTopicKeys.ConsentGrantRequested,
                 Type = nameof(ConsentGrantRequestedMessage),
                 Key = userId.ToString("N"),
-                PayloadJson = JsonSerializer.Serialize(
-                    consentMessage,
-                    KafkaJson.SerializerOptions)
+                PayloadJson = JsonSerializer.Serialize(consentMessage, KafkaJson.SerializerOptions)
             };
         });
 
@@ -736,9 +740,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         var now = DateTime.UtcNow;
     
         var verification = await dataContext.UserEmailVerifications
-            .SingleOrDefaultAsync(
-                x => x.UserId == userId && x.Type == EmailVerificationType.EmailChange,
-                cancellationToken);
+            .SingleOrDefaultAsync(x => x.UserId == userId && x.Type == EmailVerificationType.EmailChange, cancellationToken);
     
         if (verification is null)
         {
@@ -840,11 +842,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
         }
     
         var pendingRegistrationExists = await dataContext.RegistrationSessions
-            .AnyAsync(x =>
-                x.Email == email &&
-                x.Id != registration.Id &&
-                x.ExpiresAt > DateTime.UtcNow,
-                cancellationToken);
+            .AnyAsync(x => x.Email == email && x.Id != registration.Id && x.ExpiresAt > DateTime.UtcNow, cancellationToken);
     
         if (pendingRegistrationExists)
         {
@@ -890,18 +888,11 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             return true;
     
         var verification = await dataContext.UserEmailVerifications
-            .SingleOrDefaultAsync(
-                x => x.UserId == userId &&
-                     x.Type == EmailVerificationType.EmailConfirmation,
-                cancellationToken);
+            .SingleOrDefaultAsync(x => x.UserId == userId && x.Type == EmailVerificationType.EmailConfirmation, cancellationToken);
     
-        if (verification is not null &&
-            verification.ResendAvailableAt > now)
+        if (verification is not null && verification.ResendAvailableAt > now)
         {
-            var retryAfter = Math.Max(
-                1,
-                (int)Math.Ceiling(
-                    (verification.ResendAvailableAt - now).TotalSeconds));
+            var retryAfter = Math.Max(1, (int)Math.Ceiling((verification.ResendAvailableAt - now).TotalSeconds));
     
             throw new GraphQLException(ErrorBuilder.New()
                 .SetCode("EMAIL_CONFIRMATION_RESEND_COOLDOWN")
@@ -948,9 +939,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
             TopicKey = KafkaTopicKeys.EmailConfirmation,
             Type = nameof(EmailConfirmationMessage),
             Key = userId.ToString("N"),
-            PayloadJson = JsonSerializer.Serialize(
-                message,
-                KafkaJson.SerializerOptions)
+            PayloadJson = JsonSerializer.Serialize(message, KafkaJson.SerializerOptions)
         });
     
         await dataContext.SaveChangesAsync(cancellationToken);
@@ -1016,9 +1005,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
     
             await dataContext.SaveChangesAsync(cancellationToken);
     
-            var attemptsLeft = Math.Max(
-                0,
-                RegistrationVerification.MaxAttempts - verification.Attempts);
+            var attemptsLeft = Math.Max(0, RegistrationVerification.MaxAttempts - verification.Attempts);
     
             throw new GraphQLException(ErrorBuilder.New()
                 .SetCode(attemptsLeft == 0
