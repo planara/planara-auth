@@ -335,6 +335,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
     
     [AllowAnonymous]
     [UseRegistrationStep(RegistrationStep.Code)]
+    [RegistrationConsentRequired(ConsentType.PersonalData)]
     [GraphQLDescription("Подтверждение адреса электронной почты")]
     public async Task<RegistrationFlowResponse> VerifyRegistrationCode(
         [GraphQLDescription("Код подтверждения из письма")]
@@ -417,6 +418,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
     
     [AllowAnonymous]
     [UseRegistrationStep(RegistrationStep.Code)]
+    [RegistrationConsentRequired(ConsentType.PersonalData)]
     [GraphQLDescription("Повторная отправка кода подтверждения")]
     public async Task<bool> ResendRegistrationCode(
         [GlobalState(RegistrationRequest.ContextKey)] RegistrationRequestContext registrationContext,
@@ -452,6 +454,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
     
     [AllowAnonymous]
     [UseRegistrationStep(RegistrationStep.Password)]
+    [RegistrationConsentRequired(ConsentType.PersonalData)]
     [GraphQLDescription("Установка пароля при регистрации")]
     public async Task<RegistrationFlowResponse> SetRegistrationPassword(
         [GraphQLDescription("Пароль пользователя")]
@@ -480,7 +483,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
     
     [AllowAnonymous]
     [UseRegistrationStep(RegistrationStep.Personal)]
-    [ConsentRequired(ConsentType.PersonalData)]
+    [RegistrationConsentRequired(ConsentType.PersonalData)]
     [GraphQLDescription("Завершение регистрации пользователя")]
     public async Task<AuthResponse> CompleteRegistration(
         [GraphQLDescription("Персональные данные пользователя")]
