@@ -1494,7 +1494,7 @@ public class MutationsTests: BaseApiTest
         Context.RegistrationSessions.Add(registration);
         Context.UserConsentProjections.Add(new UserConsentProjection
         {
-            UserId = UserId,
+            UserId = registration.Id,
             Type = ConsentType.PersonalData,
             ConsentVersionId = Guid.NewGuid(),
             IsGranted = true,
@@ -1582,7 +1582,7 @@ public class MutationsTests: BaseApiTest
         });
         Context.UserConsentProjections.Add(new UserConsentProjection
         {
-            UserId = UserId,
+            UserId = registration.Id,
             Type = ConsentType.PersonalData,
             ConsentVersionId = Guid.NewGuid(),
             IsGranted = true,
