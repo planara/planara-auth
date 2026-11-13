@@ -480,7 +480,7 @@ public class Mutation(ITokenService tokenService, IHttpContextAccessor http)
     
     [AllowAnonymous]
     [UseRegistrationStep(RegistrationStep.Personal)]
-    [ConsentRequired(ConsentType.PersonalData)]
+    [RegistrationConsentRequired(ConsentType.PersonalData)]
     [GraphQLDescription("Завершение регистрации пользователя")]
     public async Task<AuthResponse> CompleteRegistration(
         [GraphQLDescription("Персональные данные пользователя")]

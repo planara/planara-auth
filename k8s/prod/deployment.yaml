@@ -79,6 +79,15 @@ spec:
             - name: Kafka__ProducerTopics__EmailConfirmation
               value: "EmailConfirmation"
               
+            - name: Kafka__ProducerTopics__ConsentGrantRequested
+              value: "ConsentGrantRequested"
+
+            - name: Kafka__ConsumerTopics__ConsentGranted
+              value: "ConsentGranted"
+
+            - name: Kafka__ConsumerGroupId
+              value: "svc-auth"
+              
             - name: Registration__CryptoSecret
               valueFrom:
                 secretKeyRef:
