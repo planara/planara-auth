@@ -38,7 +38,8 @@ namespace Planara.Auth.Data.Migrations
                     "Key",
                     "PayloadJson",
                     "CreatedAt",
-                    "UpdatedAt"
+                    "UpdatedAt",
+                    "AttemptCount"
                 )
                 SELECT
                     gen_random_uuid(),
@@ -57,7 +58,8 @@ namespace Planara.Auth.Data.Migrations
                         'UserAgent', c."UserAgent"
                     )::jsonb,
                     NOW(),
-                    NOW()
+                    NOW(),
+                    0
                 FROM consents c;
             """);
             
